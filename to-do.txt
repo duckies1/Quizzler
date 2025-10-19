@@ -1,0 +1,162 @@
+# Quiz Project Documentation (FastAPI + Supabase Auth + PostgreSQL)
+
+## 1. Overview
+* Platform: College quiz website based on Quizzler SRS
+* Tech stack: FastAPI, SQLAlchemy, PostgreSQL (Supabase), Supabase Auth
+* Features:
+  * User signup/login via Supabase Auth (email/password, with recovery support)
+  * Users (institutions/educators) create private quizzes with unique invite-code, customizable settings like positive/negative marking, time limits, question navigation (omni-directional or restricted), auto-exit on tab switch/minimize
+  * Admin (specific user account) creates public trivia quizzes available anytime, each with a topic/tag/genre (e.g., sports, current affairs) needed for frontend display, duration, and unique question sets per genre to ensure variety
+  * Private quizzes can be scheduled with specific start and end times in UTC (+5:30 IST offset handling in frontend/backend)
+  * Public trivia quizzes are always accessible (no strict schedule, but with per-attempt time limits)
+  * Users can attempt any quiz only once
+  * Quizzes have time limits; auto-submit on timer end (backend-enforced)
+  * Real-time auto-save of answers optional (in frontend local/session storage for resilience)
+  * Hosts view user-wise results: quiz name, date, then per student name, email, correct marks
+  * Users view their own marks, per-question correct/selected answers (including unattempted) after submission
+  * Secure environment: Frontend detects tab switch/minimize and ends quiz (submits with 0 marks if configured); backend hides correct answers until grading
+  * Trivia-specific: Single global leaderboard with rankings/scoring, ratings assigned post-attempt (based on score and time); update leaderboard after each user attempt (HTTP-based, no WebSockets/polling needed for college project)
+  * All questions sent in one response on start; all answers submitted in one request on end for simplicity
+  * Device compatibility: Responsive design (frontend responsibility)
+  * Performance: Support concurrent users, low latency (for college project, stick to HTTP; update leaderboard after each attempt)
+  * Non-functional: Scalable, reliable (backups), secure data handling, no explicit language (filter in creation)
+
+## 2. Database Schemas (SQLAlchemy)
+Updated to match SRS: Added fields for custom markings, navigation, tab-switch, trivia specifics, per-question marks, difficulty/popularity for trivia sorting. Separated private/trivia logic via `is_trivia` flag. Added Rating table for trivia ratings (simplified to global). Ensured unique attempts via constraints. Quiz has title (name), topic (tag/genre).
+
+**User:**
+* id: String (primary key, Supabase UID)
+* name: String
+* email: String
+* created_at: DateTime
+
+**Quiz:**
+* id: String (primary key, UUID or generated code)
+* title: String  # Quiz name
+* description: String
+* creator_id: String (FK User)
+* is_trivia: Boolean (true for public trivia, false for private)
+* topic: String (e.g., 'sports', tag/genre for frontend display, null for private)
+* start_time: DateTime (nullable for trivia)
+* end_time: DateTime (nullable for trivia)
+* duration: Integer (minutes)
+* positive_mark: Integer (default 1)
+* negative_mark: Integer (default 0)
+* navigation_type: String ('omni' or 'restricted')
+* tab_switch_exit: Boolean (true to auto-end on switch)
+* difficulty: String ( 'easy', 'medium', 'hard' - for trivia sorting)
+* popularity: Integer (attempt count, auto-incremented)
+* is_active: Boolean (default true)
+* UniqueConstraint('title', 'topic' for trivia to avoid duplicates)
+
+**Question:**
+* id: Integer (primary key)
+* quiz_id: String (FK Quiz)
+* question_text: String
+* option_a: String
+* option_b: String
+* option_c: String
+* option_d: String
+* correct_option: String ('a', 'b', 'c', 'd')
+* mark: Integer (custom per question, default positive_mark from Quiz)
+
+**QuizSession:**
+* id: Integer (primary key)
+* quiz_id: String (FK Quiz)
+* user_id: String (FK User)
+* started_at: DateTime
+* ended_at: DateTime (null until submission)
+* ended: Boolean (default False)
+* UniqueConstraint('quiz_id', 'user_id')  # Enforce one attempt
+
+**Response:**
+* id: Integer (primary key)
+* quiz_id: String (FK Quiz)
+* user_id: String (FK User)
+* answers: JSON  # {question_id: selected_option or null if unattempted}
+* correct_answers: JSON  # {question_id: correct_option} - stored post-grading
+* score: Integer
+* submitted_at: DateTime
+* UniqueConstraint('quiz_id', 'user_id')
+
+**Rating:**  # For trivia ratings/leaderboards (simplified global)
+* id: Integer (primary key)
+* user_id: String (FK User)
+* quiz_id: String (FK Quiz, trivia only)
+* rating: Integer (calculated based on score and time)
+* updated_at: DateTime
+
+## 3. Core Features & Flow
+Updated workflows to distinguish private vs. trivia:
+- Private: Created by any user (host), invited via email (store invites separately or check email on start), scheduled, one-time attempt, per-quiz leaderboard (simplified: name, date, student name/email/marks).
+- Trivia: Created by admin only, public, always available, unique question sets (randomize on start if needed), contribute to single global leaderboard/ratings (based on score/time), sorted by popularity/difficulty/recent.
+- Authentication: All protected routes use JWT from Supabase Auth (dependency: get_current_user).
+- Invitation for private: Host sends emails; backend stores in Invite table or verifies email on start.
+- Leaderboards: For trivia, single global - query Responses/Ratings ordered by rating/score/time.
+- Security: Backend enforces time (check submitted_at <= started_at + duration + grace_period ~5s), uniqueness. Frontend handles tab-switch (using Visibility API), auto-submits with current answers or 0 if exit enabled.
+- Auto-save: Frontend localStorage per question; on submit, send all.
+- Background tasks: Use Celery/APScheduler to clean expired sessions, update popularity.
+- Grading: On submit, compare answers, apply +ve/-ve, store correct_answers for viewing.
+- Real-time: For trivia leaderboard, simple HTTP refresh after attempt; no advanced real-time for college project.
+
+**Updated System Flow:**
+1. User authenticates via Supabase (frontend).
+2. Host creates quiz (private or admin trivia) → backend generates ID/code, stores questions.
+3. For private: Host invites emails → backend stores/sends.
+4. User browses available quizzes (trivia list with topics/tags/genres or invited privates).
+5. User clicks Start → backend checks eligibility (invited for private, not attempted, within time), creates QuizSession, returns questions (without correct_options), started_at, duration, settings.
+6. Frontend shows questions, timer (countdown from duration), navigation per settings, detects tab-switch → if enabled, auto-submit with 0 or current answers.
+7. User selects answers → auto-save to localStorage.
+8. On Submit or timer end → frontend sends all answers; backend validates time/uniqueness, grades, stores Response, updates Rating if trivia, increments popularity, updates global leaderboard.
+9. If late/network issue: Grace period; else 0 score.
+10. User views own result → gets score, per-question answers/correct.
+11. Host views results → gets quiz name/date, per student: name, email, marks.
+12. For trivia: Users view single global leaderboard (via HTTP, refreshed on load).
+
+## 4. Timer & Security
+* Frontend: Display timer, detect tab-switch/minimize (Visibilitychange event), auto-submit if enabled.
+* Backend: Authoritative time check on submit (started_at + duration).
+* Attempt once: DB constraint.
+* Correct answers: Never sent to frontend until result view (post-submission).
+* Parental control: Filter explicit language on creation (simple regex or AI if advanced).
+* Grace period: 10-30s for network delays.
+
+## 5. Recommended Best Practices
+* Auto-save per question in frontend for resilience.
+* Background tasks for auto-grading expired sessions (if not submitted).
+* JWT for all API calls.
+* Store user/selected/correct answers for detailed results (user view only; host gets simplified).
+* Use indexes on quiz_id/user_id for performance.
+* Error handling: Graceful for disconnects, log issues.
+* Testing: Unit for grading, integration for flows.
+
+## 6. Updated REST Endpoints
+Updated to match Overview execution: Added endpoints for trivia-specific (list/sort, single global leaderboard), invites, results viewing (user/host differentiated, host simplified), admin checks for trivia creation. All protected except public trivia list. Use Pydantic models for bodies.
+
+* **Auth (Handled by Supabase, but wrappers if needed):**
+  - POST /auth/signup → Supabase signup, return token.
+  - POST /auth/login → Supabase login, return token.
+  - POST /auth/recover → Supabase password recovery.
+
+* **Quizzes:**
+  - POST /quizzes/ → Create quiz (body: title, desc, topic/tag/genre, questions[list], settings[positive_mark, etc], is_trivia). If is_trivia, check if current_user is admin. Returns quiz_id/code.
+  - GET /quizzes/ → List user's available private quizzes (invited or created).
+  - GET /trivia/ → List public trivia quizzes, with sort (query params: sort_by='popularity|difficulty|recent', topic).
+  - GET /quizzes/{quiz_id} → Get quiz details (without questions/answers).
+  - POST /quizzes/{quiz_id}/invite → For private, send invites (body: emails[list]). Stores in Invite table or emails.
+
+* **Sessions & Attempts:**
+  - POST /quizzes/{quiz_id}/start → Start quiz: Check eligibility, create QuizSession, return questions (text/options only), started_at, duration, settings.
+  - POST /quizzes/{quiz_id}/submit → Submit answers (body: answers JSON). Validate, grade, store Response/Rating, return score.
+
+* **Results & Leaderboards:**
+  - GET /quizzes/{quiz_id}/my-result → User's own result: score, answers, correct_answers.
+  - GET /quizzes/{quiz_id}/results → Host only: Quiz name/date, per participant: name, email, marks (leaderboard format).
+  - GET /leaderboards/global → Trivia single global leaderboard (top users by rating/score/time).
+
+* **Users & Profile:**
+  - GET /users/me → Profile: past attempts, scores, trivia rankings, quiz recommendations (based on topics attempted).
+  - PATCH /users/me → Update name.
+
+* **Admin (if needed, protect with role):**
+  - POST /admin/trivia-genres → Add new genres monthly (for scalability).

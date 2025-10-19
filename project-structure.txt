@@ -1,0 +1,30 @@
+BACKEND/
+├── app/
+│   ├── __init__.py
+│   ├── main.py                 # FastAPI app initialization and routing setup
+│   ├── config.py               # Configuration (e.g., database URL, Supabase credentials)
+│   ├── database.py             # SQLAlchemy setup (engine, session management)
+│   ├── models/                 # Database models
+│   │   ├── __init__.py
+│   │   ├── user.py             # User model (id, name, email, created_at)
+│   │   ├── quiz.py             # Quiz model (id, title, description, creator_id, is_trivia, topic, etc.)
+│   │   ├── question.py         # Question model (id, quiz_id, question_text, options, correct_option, mark)
+│   │   ├── quiz_session.py     # QuizSession model (id, quiz_id, user_id, started_at, ended_at, ended)
+│   │   ├── response.py         # Response model (id, quiz_id, user_id, answers, correct_answers, score, submitted_at)
+│   ├── routes/                 # API endpoints
+│   │   ├── __init__.py
+│   │   ├── auth.py             # Authentication routes (signup, login, recover)
+│   │   ├── quizzes.py          # Quiz creation, listing, and invitation routes
+│   │   ├── sessions.py         # Start and submit quiz routes
+│   │   ├── results.py          # Results and leaderboard routes
+│   ├── utils/                  # Utility functions
+│   │   ├── __init__.py
+│   │   ├── auth_utils.py       # JWT validation helper
+│   │   ├── time_utils.py       # Time handling (e.g., IST conversion)
+│   ├── migrations/             # Simple database migration setup
+│   │   ├── versions/
+│   │   └── env.py
+├── .env                        # Environment variables (e.g., DATABASE_URL, SUPABASE_URL, SUPABASE_KEY)
+├── requirements.txt            # Project dependencies (fastapi, sqlalchemy, supabase-py, etc.)
+├── README.md                   # Setup instructions and API overview
+└── .gitignore                  # Standard Python gitignore
