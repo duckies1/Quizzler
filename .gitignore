@@ -7,4 +7,6 @@ env/
 venv/
 .env
 *.sqlite
-migrations/versions/*.pyc
+quizzler_env
+migrations/versions/*.pycz
+test.rest

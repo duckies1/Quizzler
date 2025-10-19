@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, EmailStr
+from typing import Optional
 from app.database import supabase, supabase_admin, db
 from app.utils.auth_utils import get_current_user
 import logging
@@ -19,7 +20,7 @@ class SignInRequest(BaseModel):
 class AuthResponse(BaseModel):
     message: str
     user: dict
-    access_token: str = None
+    access_token: Optional[str] = None
 
 @router.post("/signup", response_model=AuthResponse)
 async def signup(request: SignUpRequest):
