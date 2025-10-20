@@ -1,6 +1,3 @@
--- Quizzler Database Schema for Supabase PostgreSQL
--- Run this in your Supabase SQL Editor
-
 -- Enable UUID extension if not already enabled
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 

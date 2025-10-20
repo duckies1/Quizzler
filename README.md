@@ -7,9 +7,8 @@ A FastAPI-based backend for the Quizzler online quiz platform, built for a colle
 1. Clone the repository: `git clone <repository-url>`
 2. Install dependencies: `pip install -r requirements.txt`
 3. Set up environment variables in `.env` with your Supabase credentials.
-4. Initialize database migrations: `alembic revision -m "initial schema" --autogenerate`
-5. Apply migrations: `alembic upgrade head`
-6. Run the app: `python app/main.py` or `uvicorn app.main:app --reload`
+4. Create database tables by running the SQL from `create_tables.sql` in your Supabase dashboard
+5. Run the app: `python app/main.py` or `uvicorn app.main:app --reload`
 
 ## API Endpoints
 

@@ -160,3 +160,75 @@ Updated to match Overview execution: Added endpoints for trivia-specific (list/s
 
 * **Admin (if needed, protect with role):**
   - POST /admin/trivia-genres → Add new genres monthly (for scalability).
+
+
+
+
+  Frontend To-do:-
+  Frontend Development Guidelines for Quizzler
+
+1. General Setup
+- Use React with modern JavaScript syntax and JSX.
+- Host React dependencies via CDN (e.g., cdn.jsdelivr.net for React, ReactDOM, Babel).
+- Include Tailwind CSS for styling to ensure a responsive and visually appealing design.
+- Create a single-page application (SPA) that runs in any browser.
+
+2. Key Interfaces (Based on SRS Section 4)
+- 4.1 Sign-In/Sign-Up Interface
+  - Build a simple, user-friendly form for email-based registration/login.
+  - Add password recovery and account management links.
+  - Ensure responsive design across desktops, tablets, and mobiles (Section 4.7).
+
+- 4.2 Quiz Creation Interface
+  - Design a streamlined form for hosts to add multiple-choice questions.
+  - Include fields for title, description, custom marks per question, and constraints:
+    - Time limits (in minutes).
+    - Navigation type (omni-directional or restricted).
+    - Tab-switch detection (trigger auto-exit if enabled).
+  - Use dropdowns or checkboxes for settings.
+
+- 4.3 Quiz Participation Interface
+  - Create an intuitive, distraction-free interface with:
+    - A timer displaying remaining time.
+    - Sequential or omni-directional navigation based on quiz settings.
+    - Clear warnings for tab switching or window minimizing (use Visibility API).
+  - Fetch all questions in one API call on start; send all answers in one submit.
+
+- 4.4 Leaderboard Interface
+  - Display quiz results and rankings visually:
+    - For private quizzes: Show participant scores.
+    - For trivia: Show a single global leaderboard (simplified for college project).
+  - Use tables or cards with sorting capabilities.
+
+- 4.5 Trivia Quiz Selection Interface
+  - Build a dynamic interface with categorized topics (e.g., sports, current affairs).
+  - Add sorting options: popularity, difficulty, or most recent additions.
+  - Fetch trivia list via API with sort parameters.
+
+- 4.6 User Profile Interface
+  - Design a personalized dashboard showing:
+    - Past quiz attempts and scores.
+    - Current global rankings for trivia quizzes.
+    - Recommendations for new quizzes based on past activity.
+  - Use charts or lists for data visualization.
+
+3. Device Compatibility (Section 4.7)
+- Ensure the interface is responsive and works seamlessly on desktops, tablets, and mobile devices.
+- Test with different screen sizes and orientations.
+
+4. Performance Considerations (Section 5)
+- Minimize latency by batching API requests (e.g., one call for questions, one for submit).
+- Handle real-time updates for leaderboards with periodic refreshes (HTTP polling) after each attempt.
+- Implement robust error handling for connectivity drops or user errors.
+
+5. Security and Non-Functional Requirements (Section 6)
+- Avoid using <form> onSubmit due to sandboxed frames; use event handlers instead.
+- Use className for JSX attributes instead of class.
+- Prohibit explicit language in user inputs (add client-side filtering).
+- Ensure personal data (email, scores) is handled securely (e.g., avoid exposing in URLs).
+
+6. Best Practices
+- Create reusable React components (e.g., QuizQuestion, LeaderboardRow).
+- Use state management (e.g., useState, useEffect) for timers and form data.
+- Test responsiveness and functionality across browsers (Chrome, Firefox, Safari).
+- Document component props and API endpoints for easy integration with the backend.

@@ -92,9 +92,8 @@ async def get_current_user_optional(credentials: Optional[HTTPAuthorizationCrede
 
 def is_admin_user(user: dict) -> bool:
     """Check if user is admin (you can customize this logic)"""
-    # For now, we'll use email-based admin check
     # You can modify this to use a database field or other logic
-    admin_emails = ["admin@quizzler.com"]  # Add your admin emails here
+    admin_emails = ["admin@quizzler.com", "adityatorgal581@gmail.com"] 
     return user.get("email") in admin_emails
 
 async def require_admin(current_user: dict = Depends(get_current_user)):

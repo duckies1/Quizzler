@@ -8,5 +8,4 @@ venv/
 .env
 *.sqlite
 quizzler_env
-migrations/versions/*.pycz
 test.rest

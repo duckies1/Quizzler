@@ -72,44 +72,165 @@ async def get_quiz_results(quiz_id: str, current_user: dict = Depends(get_curren
         raise HTTPException(status_code=400, detail=f"Failed to get results: {str(e)}")
 
 @router.get("/leaderboards/global")
-async def get_global_leaderboard():
+async def get_global_leaderboard(limit: int = 50):
     """Get global leaderboard for trivia quizzes"""
     try:
-        # Get all ratings with user details
-        query = """
-        SELECT r.rating, r.updated_at, u.name, u.email, q.title as quiz_title, q.topic
-        FROM ratings r
-        JOIN users u ON r.user_id = u.id
-        JOIN quizzes q ON r.quiz_id = q.id
-        WHERE q.is_trivia = true
-        ORDER BY r.rating DESC
-        LIMIT 50
-        """
-        
-        # For now, let's use a simpler approach with responses
+        # Get all trivia responses with user and quiz details
         responses = db.select("responses", "*", {})
         
-        # Get trivia responses only
-        trivia_responses = []
+        leaderboard_data = []
+        user_ratings = {}  # To accumulate ratings per user
+        
         for response in responses:
-            quiz = db.select("quizzes", "title,topic,is_trivia", {"id": response["quiz_id"]})[0]
+            quiz = db.select("quizzes", "title,topic,is_trivia,difficulty", {"id": response["quiz_id"]})[0]
             if quiz["is_trivia"]:
                 user = db.select("users", "name,email", {"id": response["user_id"]})[0]
-                trivia_responses.append({
-                    "user_name": user["name"],
-                    "quiz_title": quiz["title"],
-                    "topic": quiz["topic"],
-                    "score": response["score"],
-                    "submitted_at": response["submitted_at"]
-                })
+                
+                # Try to get rating from ratings table
+                rating = 0
+                try:
+                    ratings = db.select("ratings", "rating", {"user_id": response["user_id"], "quiz_id": response["quiz_id"]})
+                    if ratings:
+                        rating = ratings[0]["rating"]
+                except:
+                    # Calculate rating if not in ratings table
+                    rating = response["score"] * 10  # Simple fallback
+                
+                user_key = response["user_id"]
+                if user_key not in user_ratings:
+                    user_ratings[user_key] = {
+                        "user_id": response["user_id"],
+                        "user_name": user["name"],
+                        "email": user["email"],
+                        "total_rating": 0,
+                        "quiz_count": 0,
+                        "best_quiz": "",
+                        "best_score": 0
+                    }
+                
+                user_ratings[user_key]["total_rating"] += rating
+                user_ratings[user_key]["quiz_count"] += 1
+                
+                if response["score"] > user_ratings[user_key]["best_score"]:
+                    user_ratings[user_key]["best_score"] = response["score"]
+                    user_ratings[user_key]["best_quiz"] = quiz["title"]
         
-        # Sort by score
-        trivia_responses.sort(key=lambda x: x["score"], reverse=True)
+        # Convert to list and calculate average ratings
+        for user_data in user_ratings.values():
+            user_data["average_rating"] = user_data["total_rating"] / user_data["quiz_count"] if user_data["quiz_count"] > 0 else 0
+            leaderboard_data.append(user_data)
+        
+        # Sort by average rating, then by quiz count
+        leaderboard_data.sort(key=lambda x: (x["average_rating"], x["quiz_count"]), reverse=True)
         
         return {
-            "leaderboard": trivia_responses[:50],
-            "total_entries": len(trivia_responses)
+            "leaderboard": leaderboard_data[:limit],
+            "total_entries": len(leaderboard_data)
         }
         
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Failed to get leaderboard: {str(e)}")
+
+@router.get("/leaderboards/quiz/{quiz_id}")
+async def get_quiz_leaderboard(quiz_id: str, current_user: dict = Depends(get_current_user)):
+    """Get leaderboard for a specific quiz"""
+    try:
+        # Check if quiz exists
+        quizzes = db.select("quizzes", "*", {"id": quiz_id})
+        if not quizzes:
+            raise HTTPException(status_code=404, detail="Quiz not found")
+        
+        quiz = quizzes[0]
+        
+        # For private quizzes, check if user has access
+        if not quiz["is_trivia"] and quiz["creator_id"] != current_user["id"]:
+            raise HTTPException(status_code=403, detail="Access denied")
+        
+        # Get all responses for this quiz
+        responses = db.select("responses", "*", {"quiz_id": quiz_id})
+        
+        leaderboard = []
+        for response in responses:
+            user = db.select("users", "name,email", {"id": response["user_id"]})[0]
+            leaderboard.append({
+                "user_name": user["name"],
+                "email": user["email"],
+                "score": response["score"],
+                "submitted_at": response["submitted_at"]
+            })
+        
+        # Sort by score (highest first), then by submission time (earliest first)
+        leaderboard.sort(key=lambda x: (-x["score"], x["submitted_at"]))
+        
+        return {
+            "quiz": {
+                "id": quiz["id"],
+                "title": quiz["title"],
+                "is_trivia": quiz["is_trivia"]
+            },
+            "leaderboard": leaderboard,
+            "total_participants": len(leaderboard)
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Failed to get quiz leaderboard: {str(e)}")
+
+@router.get("/stats/user")
+async def get_user_stats(current_user: dict = Depends(get_current_user)):
+    """Get user's quiz statistics"""
+    try:
+        # Get all user's responses
+        responses = db.select("responses", "*", {"user_id": current_user["id"]})
+        
+        total_quizzes = len(responses)
+        total_score = sum(response["score"] for response in responses)
+        
+        trivia_stats = {
+            "quizzes_attempted": 0,
+            "total_score": 0,
+            "average_score": 0,
+            "best_score": 0,
+            "topics_attempted": set()
+        }
+        
+        private_stats = {
+            "quizzes_attempted": 0,
+            "total_score": 0,
+            "average_score": 0,
+            "best_score": 0
+        }
+        
+        for response in responses:
+            quiz = db.select("quizzes", "is_trivia,topic,title", {"id": response["quiz_id"]})[0]
+            
+            if quiz["is_trivia"]:
+                trivia_stats["quizzes_attempted"] += 1
+                trivia_stats["total_score"] += response["score"]
+                trivia_stats["best_score"] = max(trivia_stats["best_score"], response["score"])
+                if quiz["topic"]:
+                    trivia_stats["topics_attempted"].add(quiz["topic"])
+            else:
+                private_stats["quizzes_attempted"] += 1
+                private_stats["total_score"] += response["score"]
+                private_stats["best_score"] = max(private_stats["best_score"], response["score"])
+        
+        # Calculate averages
+        if trivia_stats["quizzes_attempted"] > 0:
+            trivia_stats["average_score"] = trivia_stats["total_score"] / trivia_stats["quizzes_attempted"]
+        
+        if private_stats["quizzes_attempted"] > 0:
+            private_stats["average_score"] = private_stats["total_score"] / private_stats["quizzes_attempted"]
+        
+        trivia_stats["topics_attempted"] = list(trivia_stats["topics_attempted"])
+        
+        return {
+            "total_quizzes_attempted": total_quizzes,
+            "total_score": total_score,
+            "trivia_stats": trivia_stats,
+            "private_stats": private_stats
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Failed to get user stats: {str(e)}")
