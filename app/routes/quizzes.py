@@ -17,7 +17,6 @@ class QuestionCreate(BaseModel):
     option_c: str
     option_d: str
     correct_option: str  # 'a', 'b', 'c', 'd'
-    mark: Optional[int] = None
 
 class QuizCreate(BaseModel):
     title: str
@@ -28,14 +27,11 @@ class QuizCreate(BaseModel):
     end_time: Optional[str] = None    # ISO format datetime string
     duration: int = 60  # minutes
     positive_mark: int = 1
-    negative_mark: int = 0
+    negative_mark: int = 0  # Integer to match database schema
     navigation_type: str = "omni"
     tab_switch_exit: bool = True
     difficulty: Optional[str] = None
     questions: List[QuestionCreate] = []
-
-class InviteUsers(BaseModel):
-    emails: List[str]
 
 @router.post("/")
 async def create_quiz(quiz_data: QuizCreate, current_user: dict = Depends(get_current_user)):
@@ -110,6 +106,7 @@ async def create_quiz(quiz_data: QuizCreate, current_user: dict = Depends(get_cu
         if quiz_data.questions:
             for question_data in quiz_data.questions:
                 question = {
+                    "id": str(uuid4()),
                     "quiz_id": created_quiz["id"],
                     "question_text": question_data.question_text,
                     "option_a": question_data.option_a,
@@ -117,7 +114,7 @@ async def create_quiz(quiz_data: QuizCreate, current_user: dict = Depends(get_cu
                     "option_c": question_data.option_c,
                     "option_d": question_data.option_d,
                     "correct_option": question_data.correct_option,
-                    "mark": question_data.mark or quiz_data.positive_mark
+                    "mark": quiz_data.positive_mark
                 }
                 db.insert("questions", question)
         
@@ -130,28 +127,28 @@ async def create_quiz(quiz_data: QuizCreate, current_user: dict = Depends(get_cu
 
 @router.get("/")
 async def get_my_quizzes(current_user: dict = Depends(get_current_user)):
-    """Get current user's available private quizzes (invited or created)"""
+    """Get current user's created private quizzes"""
     try:
         # Get quizzes created by the user
         created_quizzes = db.select("quizzes", "*", {"creator_id": current_user["id"], "is_trivia": False})
         
-        # Get quizzes the user is invited to (check invites table)
-        invited_quizzes = []
-        try:
-            invites = db.select("invites", "quiz_id", {"email": current_user["email"]})
-            for invite in invites:
-                quiz = db.select("quizzes", "*", {"id": invite["quiz_id"], "is_trivia": False, "is_active": True})
-                if quiz:
-                    invited_quizzes.extend(quiz)
-        except:
-            # Invites table might not exist yet, ignore
-            pass
+        # Add status information for each quiz
+        current_time = datetime.now(IST)
+        for quiz in created_quizzes:
+            if quiz.get("start_time") and quiz.get("end_time"):
+                start_time = datetime.fromisoformat(quiz["start_time"])
+                end_time = datetime.fromisoformat(quiz["end_time"])
+                
+                if current_time < start_time:
+                    quiz["status"] = "assigned"
+                elif start_time <= current_time <= end_time:
+                    quiz["status"] = "active"
+                else:
+                    quiz["status"] = "ended"
+            else:
+                quiz["status"] = "active"
         
-        # Combine and remove duplicates
-        all_quizzes = created_quizzes + invited_quizzes
-        unique_quizzes = {quiz["id"]: quiz for quiz in all_quizzes}.values()
-        
-        return list(unique_quizzes)
+        return created_quizzes
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Failed to fetch quizzes: {str(e)}")
 
@@ -186,7 +183,7 @@ async def get_trivia_quizzes(
 
 @router.get("/{quiz_id}")
 async def get_quiz_details(quiz_id: str, current_user: dict = Depends(get_current_user)):
-    """Get quiz details (without questions/answers)"""
+    """Get quiz details (without questions/answers) - anyone with quiz ID can access"""
     try:
         quizzes = db.select("quizzes", "*", {"id": quiz_id, "is_active": True})
         if not quizzes:
@@ -194,17 +191,27 @@ async def get_quiz_details(quiz_id: str, current_user: dict = Depends(get_curren
         
         quiz = quizzes[0]
         
-        # Check if user has access to this quiz
+        # Anyone with the quiz ID can access private quizzes (no invitation system)
+        # For private quizzes, add status information based on timing
         if not quiz["is_trivia"]:
-            # For private quiz, check if user is creator or invited
-            if quiz["creator_id"] != current_user["id"]:
-                try:
-                    invites = db.select("invites", "*", {"quiz_id": quiz_id, "email": current_user["email"]})
-                    if not invites:
-                        raise HTTPException(status_code=403, detail="You don't have access to this quiz")
-                except:
-                    # If invites table doesn't exist, only creator can access
-                    raise HTTPException(status_code=403, detail="You don't have access to this quiz")
+            current_time = datetime.now(IST)
+            
+            if quiz.get("start_time") and quiz.get("end_time"):
+                start_time = datetime.fromisoformat(quiz["start_time"])
+                end_time = datetime.fromisoformat(quiz["end_time"])
+                
+                if current_time < start_time:
+                    quiz["status"] = "assigned"  # Quiz is scheduled but not started
+                elif start_time <= current_time <= end_time:
+                    quiz["status"] = "active"    # Quiz is currently active
+                else:
+                    quiz["status"] = "ended"     # Quiz has ended
+            else:
+                # No scheduling, quiz is always available
+                quiz["status"] = "active"
+        else:
+            # Trivia quizzes are always active
+            quiz["status"] = "active"
         
         # Get question count
         questions = db.select("questions", "id", {"quiz_id": quiz_id})
@@ -215,46 +222,6 @@ async def get_quiz_details(quiz_id: str, current_user: dict = Depends(get_curren
         raise
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Failed to get quiz details: {str(e)}")
-
-@router.post("/{quiz_id}/invite")
-async def invite_users(quiz_id: str, invite_data: InviteUsers, current_user: dict = Depends(get_current_user)):
-    """Invite users to a private quiz"""
-    try:
-        # Check if quiz exists and user is the creator
-        quizzes = db.select("quizzes", "*", {"id": quiz_id, "creator_id": current_user["id"]})
-        if not quizzes:
-            raise HTTPException(status_code=404, detail="Quiz not found or you're not the creator")
-        
-        quiz = quizzes[0]
-        if quiz["is_trivia"]:
-            raise HTTPException(status_code=400, detail="Cannot invite users to trivia quizzes")
-        
-        # Create invites table if it doesn't exist (handle via try-catch)
-        invited_emails = []
-        for email in invite_data.emails:
-            try:
-                invite = {
-                    "quiz_id": quiz_id,
-                    "email": email,
-                    "invited_by": current_user["id"],
-                    "invited_at": datetime.now(IST).isoformat()
-                }
-                db.insert("invites", invite)
-                invited_emails.append(email)
-            except Exception as e:
-                # If insert fails, it might be duplicate or table issue
-                continue
-        
-        return {
-            "message": f"Invitations sent to {len(invited_emails)} users",
-            "invited_emails": invited_emails,
-            "quiz_title": quiz["title"]
-        }
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Failed to send invitations: {str(e)}")
 
 @router.get("/topics/list")
 async def get_available_topics():

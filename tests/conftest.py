@@ -77,8 +77,7 @@ async def test_quiz_data():
                 "option_b": "4",
                 "option_c": "5",
                 "option_d": "6",
-                "correct_option": "b",
-                "mark": 2
+                "correct_option": "b"
             },
             {
                 "question_text": "What is the capital of France?",
@@ -86,8 +85,7 @@ async def test_quiz_data():
                 "option_b": "Berlin",
                 "option_c": "Paris",
                 "option_d": "Madrid",
-                "correct_option": "c",
-                "mark": 2
+                "correct_option": "c"
             }
         ]
     }
@@ -113,8 +111,7 @@ async def trivia_quiz_data():
                 "option_b": "5",
                 "option_c": "6",
                 "option_d": "7",
-                "correct_option": "b",
-                "mark": 1
+                "correct_option": "b"
             }
         ]
     }

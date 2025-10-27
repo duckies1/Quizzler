@@ -202,8 +202,19 @@ async def get_user_stats(current_user: dict = Depends(get_current_user)):
             "best_score": 0
         }
         
+        # Track perfect scores
+        has_perfect_score = False
+        
         for response in responses:
-            quiz = db.select("quizzes", "is_trivia,topic,title", {"id": response["quiz_id"]})[0]
+            quiz = db.select("quizzes", "is_trivia,topic,title,positive_mark", {"id": response["quiz_id"]})[0]
+            
+            # Calculate max possible score for this quiz
+            questions = db.select("questions", "id", {"quiz_id": response["quiz_id"]})
+            max_possible_score = len(questions) * quiz["positive_mark"]
+            
+            # Check if this is a perfect score (100%)
+            if response["score"] == max_possible_score and max_possible_score > 0:
+                has_perfect_score = True
             
             if quiz["is_trivia"]:
                 trivia_stats["quizzes_attempted"] += 1
@@ -229,7 +240,8 @@ async def get_user_stats(current_user: dict = Depends(get_current_user)):
             "total_quizzes_attempted": total_quizzes,
             "total_score": total_score,
             "trivia_stats": trivia_stats,
-            "private_stats": private_stats
+            "private_stats": private_stats,
+            "has_perfect_score": has_perfect_score
         }
         
     except Exception as e:

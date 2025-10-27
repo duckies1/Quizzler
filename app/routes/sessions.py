@@ -43,17 +43,6 @@ async def start_quiz(quiz_id: str, current_user: dict = Depends(get_current_user
                     end_time = end_time_naive.astimezone(IST)
                 if current_time > end_time:
                     raise HTTPException(status_code=400, detail="Quiz has ended")
-            
-            # Check if user is invited for private quiz
-            if quiz["creator_id"] != current_user["id"]:
-                try:
-                    invites = db.select("invites", "*", {"quiz_id": quiz_id, "email": current_user["email"]})
-                    if not invites:
-                        raise HTTPException(status_code=403, detail="You are not invited to this quiz")
-                except:
-                    # If invites table doesn't exist, only creator can access
-                    if quiz["creator_id"] != current_user["id"]:
-                        raise HTTPException(status_code=403, detail="You are not invited to this quiz")
         
         # Check if user already has a session for this quiz
         existing_sessions = db.select("quiz_sessions", "*", {"quiz_id": quiz_id, "user_id": current_user["id"]})
@@ -76,7 +65,7 @@ async def start_quiz(quiz_id: str, current_user: dict = Depends(get_current_user
         session = db.insert("quiz_sessions", session_data)
         
         # Get quiz questions (without correct answers)
-        questions = db.select("questions", "id,question_text,option_a,option_b,option_c,option_d,mark", {"quiz_id": quiz_id})
+        questions = db.select("questions", "id,question_text,option_a,option_b,option_c,option_d", {"quiz_id": quiz_id})
         
         # Update quiz popularity for trivia
         if quiz["is_trivia"]:
@@ -156,10 +145,8 @@ async def submit_quiz(quiz_id: str, answers_data: SubmitAnswersRequest, current_
         for question_id, correct_option in correct_answers.items():
             user_answer = answers_data.answers.get(question_id)
             if user_answer == correct_option:
-                # Find question to get its marks
-                question = next((q for q in questions if str(q["id"]) == question_id), None)
-                if question:
-                    score += question.get("mark", quiz["positive_mark"])
+                # Use general positive marks for all correct answers
+                score += quiz["positive_mark"]
             elif user_answer is not None:  # Wrong answer (not unattempted)
                 score -= quiz["negative_mark"]
         
@@ -185,7 +172,7 @@ async def submit_quiz(quiz_id: str, answers_data: SubmitAnswersRequest, current_
         if quiz["is_trivia"]:
             # Calculate rating based on score and time taken
             time_taken_minutes = (current_time - started_at).total_seconds() / 60
-            max_score = sum(q.get("mark", quiz["positive_mark"]) for q in questions)
+            max_score = len(questions) * quiz["positive_mark"]
             
             # Rating calculation: base score + time bonus (faster = better)
             score_percentage = (score / max_score) * 100 if max_score > 0 else 0
