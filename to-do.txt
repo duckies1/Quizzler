@@ -3,3 +3,5 @@
 3.Navigation (omni or restricted).
 4.Improve ui of creating quiz.
 5.Remove comments
+6.Respoonsize 
+7.Pfp

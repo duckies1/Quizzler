@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
 from app.database import db
 from app.utils.auth_utils import get_current_user, require_admin, is_admin_user
 from uuid import uuid4
@@ -6,6 +6,8 @@ from pydantic import BaseModel
 from typing import List, Optional
 from datetime import datetime, timedelta
 import pytz
+import csv
+import io
 
 router = APIRouter()
 IST = pytz.timezone('Asia/Kolkata')
@@ -17,6 +19,21 @@ class QuestionCreate(BaseModel):
     option_c: str
     option_d: str
     correct_option: str  # 'a', 'b', 'c', 'd'
+    
+    # Add validation for field lengths
+    def validate_lengths(self):
+        if len(self.question_text) > 500:
+            raise ValueError("Question text cannot exceed 500 characters")
+        if len(self.option_a) > 200:
+            raise ValueError("Option A cannot exceed 200 characters")
+        if len(self.option_b) > 200:
+            raise ValueError("Option B cannot exceed 200 characters")
+        if len(self.option_c) > 200:
+            raise ValueError("Option C cannot exceed 200 characters")
+        if len(self.option_d) > 200:
+            raise ValueError("Option D cannot exceed 200 characters")
+        if self.correct_option not in ['a', 'b', 'c', 'd']:
+            raise ValueError("Correct option must be 'a', 'b', 'c', or 'd'")
 
 class QuizCreate(BaseModel):
     title: str
@@ -37,6 +54,17 @@ class QuizCreate(BaseModel):
 async def create_quiz(quiz_data: QuizCreate, current_user: dict = Depends(get_current_user)):
     """Create a new quiz"""
     try:
+        # Validate maximum questions limit
+        if len(quiz_data.questions) > 50:
+            raise HTTPException(status_code=400, detail="Maximum 50 questions allowed per quiz")
+        
+        # Validate each question's field lengths
+        for i, question in enumerate(quiz_data.questions):
+            try:
+                question.validate_lengths()
+            except ValueError as e:
+                raise HTTPException(status_code=400, detail=f"Question {i+1}: {str(e)}")
+        
         # If it's a trivia quiz, check admin privileges
         if quiz_data.is_trivia:
             if not is_admin_user(current_user):
@@ -86,7 +114,7 @@ async def create_quiz(quiz_data: QuizCreate, current_user: dict = Depends(get_cu
             "description": quiz_data.description,
             "creator_id": current_user["id"],
             "is_trivia": quiz_data.is_trivia,
-            "topic": quiz_data.topic,
+            "topic": quiz_data.topic if quiz_data.is_trivia else None,  # Only set topic for trivia quizzes
             "start_time": start_time,
             "end_time": end_time,
             "duration": quiz_data.duration,
@@ -94,7 +122,7 @@ async def create_quiz(quiz_data: QuizCreate, current_user: dict = Depends(get_cu
             "negative_mark": quiz_data.negative_mark,
             "navigation_type": quiz_data.navigation_type,
             "tab_switch_exit": quiz_data.tab_switch_exit,
-            "difficulty": quiz_data.difficulty,
+            "difficulty": quiz_data.difficulty if quiz_data.is_trivia else None,  # Only set difficulty for trivia quizzes
             "popularity": 0,
             "is_active": True,
             "created_at": datetime.now(IST).isoformat()
@@ -106,7 +134,6 @@ async def create_quiz(quiz_data: QuizCreate, current_user: dict = Depends(get_cu
         if quiz_data.questions:
             for question_data in quiz_data.questions:
                 question = {
-                    "id": str(uuid4()),
                     "quiz_id": created_quiz["id"],
                     "question_text": question_data.question_text,
                     "option_a": question_data.option_a,
@@ -123,7 +150,21 @@ async def create_quiz(quiz_data: QuizCreate, current_user: dict = Depends(get_cu
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Failed to create quiz: {str(e)}")
+        error_msg = str(e)
+        # Handle duplicate trivia quiz title/topic combination
+        if "unique_trivia_title_topic" in error_msg or "duplicate key value" in error_msg:
+            if quiz_data.is_trivia:
+                raise HTTPException(
+                    status_code=400, 
+                    detail=f"A trivia quiz with the title '{quiz_data.title}' and topic '{quiz_data.topic}' already exists. Please choose a different title or topic."
+                )
+            else:
+                # This shouldn't happen for private quizzes, but just in case
+                raise HTTPException(
+                    status_code=400, 
+                    detail="A quiz with this title already exists. Please choose a different title."
+                )
+        raise HTTPException(status_code=400, detail=f"Failed to create quiz: {error_msg}")
 
 @router.get("/")
 async def get_my_quizzes(current_user: dict = Depends(get_current_user)):
@@ -232,3 +273,95 @@ async def get_available_topics():
         return {"topics": topics}
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Failed to get topics: {str(e)}")
+
+@router.post("/import-questions")
+async def import_questions_from_csv(
+    file: UploadFile = File(...),
+    current_user: dict = Depends(get_current_user)
+):
+    """Import questions from a CSV file"""
+    try:
+        # Validate file type
+        if not file.filename.endswith('.csv'):
+            raise HTTPException(status_code=400, detail="Only CSV files are allowed")
+        
+        # Read and decode the file
+        content = await file.read()
+        csv_content = content.decode('utf-8')
+        
+        # Parse CSV
+        csv_reader = csv.reader(io.StringIO(csv_content))
+        headers = next(csv_reader)  # Skip header row
+        
+        # Validate CSV headers
+        expected_headers = ['question_text', 'option_a', 'option_b', 'option_c', 'option_d', 'correct_option']
+        if headers != expected_headers:
+            raise HTTPException(
+                status_code=400, 
+                detail=f"Invalid CSV format. Expected headers: {', '.join(expected_headers)}"
+            )
+        
+        questions = []
+        row_number = 1  # Start from 1 since we skipped header
+        
+        for row in csv_reader:
+            row_number += 1
+            
+            if len(row) != 6:
+                raise HTTPException(
+                    status_code=400, 
+                    detail=f"Row {row_number}: Invalid number of columns. Expected 6, got {len(row)}"
+                )
+            
+            question_text, option_a, option_b, option_c, option_d, correct_option = row
+            
+            # Create and validate question
+            try:
+                question = QuestionCreate(
+                    question_text=question_text.strip(),
+                    option_a=option_a.strip(),
+                    option_b=option_b.strip(),
+                    option_c=option_c.strip(),
+                    option_d=option_d.strip(),
+                    correct_option=correct_option.strip().lower()
+                )
+                question.validate_lengths()
+                questions.append(question)
+            except ValueError as e:
+                raise HTTPException(
+                    status_code=400, 
+                    detail=f"Row {row_number}: {str(e)}"
+                )
+            
+            # Check maximum questions limit
+            if len(questions) > 50:
+                raise HTTPException(
+                    status_code=400, 
+                    detail="Maximum 50 questions allowed per quiz"
+                )
+        
+        if not questions:
+            raise HTTPException(status_code=400, detail="No valid questions found in the CSV file")
+        
+        # Convert to dict format for frontend
+        questions_data = []
+        for i, q in enumerate(questions):
+            questions_data.append({
+                "id": f"import_{i}",  # Temporary ID for frontend
+                "question_text": q.question_text,
+                "option_a": q.option_a,
+                "option_b": q.option_b,
+                "option_c": q.option_c,
+                "option_d": q.option_d,
+                "correct_option": q.correct_option
+            })
+        
+        return {
+            "message": f"Successfully imported {len(questions)} questions",
+            "questions": questions_data
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Failed to import questions: {str(e)}")

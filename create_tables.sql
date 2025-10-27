@@ -27,8 +27,7 @@ CREATE TABLE IF NOT EXISTS quizzes (
     difficulty TEXT, -- 'easy', 'medium', 'hard' for trivia
     popularity INTEGER DEFAULT 0,
     is_active BOOLEAN DEFAULT TRUE,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    CONSTRAINT unique_trivia_title_topic UNIQUE (title, topic)
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
 -- Questions table
@@ -81,6 +80,10 @@ CREATE TABLE IF NOT EXISTS ratings (
 CREATE INDEX IF NOT EXISTS idx_quizzes_creator_id ON quizzes(creator_id);
 CREATE INDEX IF NOT EXISTS idx_quizzes_is_trivia ON quizzes(is_trivia);
 CREATE INDEX IF NOT EXISTS idx_quizzes_topic ON quizzes(topic);
+
+-- Create partial unique constraint only for trivia quizzes
+CREATE UNIQUE INDEX IF NOT EXISTS unique_trivia_title_topic 
+ON quizzes(title, topic) WHERE is_trivia = true;
 CREATE INDEX IF NOT EXISTS idx_questions_quiz_id ON questions(quiz_id);
 CREATE INDEX IF NOT EXISTS idx_quiz_sessions_quiz_id ON quiz_sessions(quiz_id);
 CREATE INDEX IF NOT EXISTS idx_quiz_sessions_user_id ON quiz_sessions(user_id);
