@@ -18,11 +18,27 @@ async def get_my_result(quiz_id: str, current_user: dict = Depends(get_current_u
         # Get quiz info
         quiz = db.select("quizzes", "title,description", {"id": quiz_id})[0]
         
+        # Get all questions for this quiz
+        questions = db.select("questions", "id,question_text,option_a,option_b,option_c,option_d,correct_option", {"quiz_id": quiz_id})
+        
+        # Create a mapping of question details
+        question_details = {}
+        for question in questions:
+            question_details[str(question["id"])] = {
+                "question_text": question["question_text"],
+                "option_a": question["option_a"],
+                "option_b": question["option_b"],
+                "option_c": question["option_c"],
+                "option_d": question["option_d"],
+                "correct_option": question["correct_option"]
+            }
+        
         return {
             "quiz_title": quiz["title"],
             "score": response["score"],
             "answers": response["answers"],
             "correct_answers": response["correct_answers"],
+            "questions": question_details,
             "submitted_at": response["submitted_at"]
         }
     except HTTPException:
