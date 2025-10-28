@@ -1,7 +1,0 @@
-1.Make Frontend look good(Now very plain and depressing).
-2.Quiz end on navigation.
-3.Navigation (omni or restricted).
-4.Improve ui of creating quiz.
-5.Remove comments
-6.Respoonsize 
-7.Pfp

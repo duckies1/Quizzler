@@ -9,3 +9,5 @@ venv/
 *.sqlite
 quizzler_env
 test.rest
+create_tables.sql
+to-do.txt

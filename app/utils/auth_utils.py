@@ -57,3 +57,18 @@ async def require_admin(current_user: dict = Depends(get_current_user)):
             detail="Admin privileges required"
         )
     return current_user
+
+async def get_current_user_from_token(token: str) -> Optional[dict]:
+    """Get current user from a raw JWT token string"""
+    try:
+        user = verify_supabase_token(token)
+        if user:
+            return {
+                "id": user.id,
+                "email": user.email,
+                "metadata": user.user_metadata
+            }
+        return None
+    except Exception as e:
+        logging.error(f"Error getting user from token: {e}")
+        return None

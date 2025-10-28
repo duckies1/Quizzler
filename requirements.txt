@@ -4,9 +4,11 @@ sqlalchemy==2.0.23
 pydantic==2.12.3
 pydantic-settings==2.0.3
 supabase==2.22.0
+websockets>=11,<12
 python-jose[cryptography]==3.3.0
 python-multipart==0.0.6
 psycopg2-binary==2.9.9
 pytz==2023.3
 python-dotenv==1.0.0
-typing-extensions 
+typing-extensions
+psutil==5.9.6

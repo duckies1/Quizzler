@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.routes import auth, quizzes, sessions, results, users, admin
+from app.routes import auth, quizzes, sessions, results, users, admin, realtime
 
 app = FastAPI(title="Quizzler API", version="1.0.0", description="API for the Quizzler online quiz platform")
 
@@ -20,6 +20,7 @@ app.include_router(sessions.router, prefix="/quizzes", tags=["Quiz Sessions"])
 app.include_router(results.router, prefix="/results", tags=["Results"])
 app.include_router(users.router, prefix="/users", tags=["Users"])
 app.include_router(admin.router, prefix="/admin", tags=["Admin"])
+app.include_router(realtime.router, prefix="/realtime", tags=["Live Quiz"])
 
 # Add trivia route at root level for easy access
 @app.get("/trivia", tags=["Quizzes"])

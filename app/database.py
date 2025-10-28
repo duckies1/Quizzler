@@ -1,3 +1,23 @@
+import sys
+import importlib.util
+from types import ModuleType
+
+# Create a monkey patch for the missing websockets.asyncio module
+if 'websockets.asyncio' not in sys.modules:
+    # Create a fake asyncio module with the ClientConnection class
+    asyncio_module = ModuleType('websockets.asyncio')
+    client_module = ModuleType('websockets.asyncio.client')
+    
+    # Create a dummy ClientConnection class
+    class ClientConnection:
+        pass
+    
+    client_module.ClientConnection = ClientConnection
+    asyncio_module.client = client_module
+    
+    sys.modules['websockets.asyncio'] = asyncio_module
+    sys.modules['websockets.asyncio.client'] = client_module
+
 from supabase import create_client, Client
 from app.config import settings
 import logging
