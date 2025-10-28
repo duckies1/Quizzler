@@ -20,7 +20,6 @@ class QuestionCreate(BaseModel):
     option_d: str
     correct_option: str  # 'a', 'b', 'c', 'd'
     
-    # Add validation for field lengths
     def validate_lengths(self):
         if len(self.question_text) > 500:
             raise ValueError("Question text cannot exceed 500 characters")
@@ -40,11 +39,11 @@ class QuizCreate(BaseModel):
     description: str
     is_trivia: bool = False
     topic: Optional[str] = None
-    start_time: Optional[str] = None  # ISO format datetime string
-    end_time: Optional[str] = None    # ISO format datetime string
-    duration: int = 60  # minutes
+    start_time: Optional[str] = None 
+    end_time: Optional[str] = None   
+    duration: int = 60  
     positive_mark: int = 1
-    negative_mark: int = 0  # Integer to match database schema
+    negative_mark: int = 0  
     navigation_type: str = "omni"
     tab_switch_exit: bool = True
     difficulty: Optional[str] = None
@@ -54,32 +53,27 @@ class QuizCreate(BaseModel):
 async def create_quiz(quiz_data: QuizCreate, current_user: dict = Depends(get_current_user)):
     """Create a new quiz"""
     try:
-        # Validate maximum questions limit
         if len(quiz_data.questions) > 50:
             raise HTTPException(status_code=400, detail="Maximum 50 questions allowed per quiz")
-        
-        # Validate each question's field lengths
+
         for i, question in enumerate(quiz_data.questions):
             try:
                 question.validate_lengths()
             except ValueError as e:
                 raise HTTPException(status_code=400, detail=f"Question {i+1}: {str(e)}")
         
-        # If it's a trivia quiz, check admin privileges
         if quiz_data.is_trivia:
             if not is_admin_user(current_user):
                 raise HTTPException(status_code=403, detail="Only admins can create trivia quizzes")
         
         current_time = datetime.now(IST)
         
-        # Convert datetime strings to IST if provided and validate scheduling
         start_time = None
         end_time = None
         
         if quiz_data.start_time:
             start_dt = datetime.fromisoformat(quiz_data.start_time.replace('Z', '+00:00')).astimezone(IST)
             
-            # Validate that start_time is in the future for private quizzes
             if not quiz_data.is_trivia and start_dt <= current_time:
                 raise HTTPException(
                     status_code=400, 
@@ -87,16 +81,13 @@ async def create_quiz(quiz_data: QuizCreate, current_user: dict = Depends(get_cu
                 )
             
             start_time = start_dt.isoformat()
-            # Auto-calculate end_time = start_time + duration
             end_dt = start_dt + timedelta(minutes=quiz_data.duration)
             end_time = end_dt.isoformat()
             
         elif quiz_data.end_time:
-            # If only end_time is provided, calculate start_time
             end_dt = datetime.fromisoformat(quiz_data.end_time.replace('Z', '+00:00')).astimezone(IST)
             start_dt = end_dt - timedelta(minutes=quiz_data.duration)
             
-            # Validate that calculated start_time is in the future
             if not quiz_data.is_trivia and start_dt <= current_time:
                 raise HTTPException(
                     status_code=400, 
@@ -106,7 +97,6 @@ async def create_quiz(quiz_data: QuizCreate, current_user: dict = Depends(get_cu
             start_time = start_dt.isoformat()
             end_time = end_dt.isoformat()
             
-        # For trivia quizzes, no scheduling required (always available)
         
         quiz = {
             "id": str(uuid4()),
@@ -114,7 +104,7 @@ async def create_quiz(quiz_data: QuizCreate, current_user: dict = Depends(get_cu
             "description": quiz_data.description,
             "creator_id": current_user["id"],
             "is_trivia": quiz_data.is_trivia,
-            "topic": quiz_data.topic if quiz_data.is_trivia else None,  # Only set topic for trivia quizzes
+            "topic": quiz_data.topic if quiz_data.is_trivia else None, 
             "start_time": start_time,
             "end_time": end_time,
             "duration": quiz_data.duration,
@@ -122,7 +112,7 @@ async def create_quiz(quiz_data: QuizCreate, current_user: dict = Depends(get_cu
             "negative_mark": quiz_data.negative_mark,
             "navigation_type": quiz_data.navigation_type,
             "tab_switch_exit": quiz_data.tab_switch_exit,
-            "difficulty": quiz_data.difficulty if quiz_data.is_trivia else None,  # Only set difficulty for trivia quizzes
+            "difficulty": quiz_data.difficulty if quiz_data.is_trivia else None, 
             "popularity": 0,
             "is_active": True,
             "created_at": datetime.now(IST).isoformat()
@@ -130,7 +120,6 @@ async def create_quiz(quiz_data: QuizCreate, current_user: dict = Depends(get_cu
         
         created_quiz = db.insert("quizzes", quiz)
         
-        # Create questions if provided
         if quiz_data.questions:
             for question_data in quiz_data.questions:
                 question = {
@@ -151,7 +140,6 @@ async def create_quiz(quiz_data: QuizCreate, current_user: dict = Depends(get_cu
         raise
     except Exception as e:
         error_msg = str(e)
-        # Handle duplicate trivia quiz title/topic combination
         if "unique_trivia_title_topic" in error_msg or "duplicate key value" in error_msg:
             if quiz_data.is_trivia:
                 raise HTTPException(
@@ -159,7 +147,6 @@ async def create_quiz(quiz_data: QuizCreate, current_user: dict = Depends(get_cu
                     detail=f"A trivia quiz with the title '{quiz_data.title}' and topic '{quiz_data.topic}' already exists. Please choose a different title or topic."
                 )
             else:
-                # This shouldn't happen for private quizzes, but just in case
                 raise HTTPException(
                     status_code=400, 
                     detail="A quiz with this title already exists. Please choose a different title."
@@ -170,10 +157,8 @@ async def create_quiz(quiz_data: QuizCreate, current_user: dict = Depends(get_cu
 async def get_my_quizzes(current_user: dict = Depends(get_current_user)):
     """Get current user's created private quizzes"""
     try:
-        # Get quizzes created by the user
         created_quizzes = db.select("quizzes", "*", {"creator_id": current_user["id"], "is_trivia": False})
         
-        # Add status information for each quiz
         current_time = datetime.now(IST)
         for quiz in created_quizzes:
             if quiz.get("start_time") and quiz.get("end_time"):
@@ -209,7 +194,6 @@ async def get_trivia_quizzes(
             
         quizzes = db.select("quizzes", "*", filters)
         
-        # Sort quizzes based on sort_by parameter
         if sort_by == "popularity":
             quizzes.sort(key=lambda x: x.get("popularity", 0), reverse=True)
         elif sort_by == "recent":
@@ -232,8 +216,6 @@ async def get_quiz_details(quiz_id: str, current_user: dict = Depends(get_curren
         
         quiz = quizzes[0]
         
-        # Anyone with the quiz ID can access private quizzes (no invitation system)
-        # For private quizzes, add status information based on timing
         if not quiz["is_trivia"]:
             current_time = datetime.now(IST)
             
@@ -242,19 +224,16 @@ async def get_quiz_details(quiz_id: str, current_user: dict = Depends(get_curren
                 end_time = datetime.fromisoformat(quiz["end_time"])
                 
                 if current_time < start_time:
-                    quiz["status"] = "assigned"  # Quiz is scheduled but not started
+                    quiz["status"] = "assigned"  
                 elif start_time <= current_time <= end_time:
-                    quiz["status"] = "active"    # Quiz is currently active
+                    quiz["status"] = "active"    
                 else:
-                    quiz["status"] = "ended"     # Quiz has ended
+                    quiz["status"] = "ended"    
             else:
-                # No scheduling, quiz is always available
                 quiz["status"] = "active"
         else:
-            # Trivia quizzes are always active
             quiz["status"] = "active"
         
-        # Get question count
         questions = db.select("questions", "id", {"quiz_id": quiz_id})
         quiz["question_count"] = len(questions)
         
@@ -281,19 +260,15 @@ async def import_questions_from_csv(
 ):
     """Import questions from a CSV file"""
     try:
-        # Validate file type
         if not file.filename.endswith('.csv'):
             raise HTTPException(status_code=400, detail="Only CSV files are allowed")
         
-        # Read and decode the file
         content = await file.read()
         csv_content = content.decode('utf-8')
         
-        # Parse CSV
         csv_reader = csv.reader(io.StringIO(csv_content))
-        headers = next(csv_reader)  # Skip header row
+        headers = next(csv_reader)  
         
-        # Validate CSV headers
         expected_headers = ['question_text', 'option_a', 'option_b', 'option_c', 'option_d', 'correct_option']
         if headers != expected_headers:
             raise HTTPException(
@@ -302,7 +277,7 @@ async def import_questions_from_csv(
             )
         
         questions = []
-        row_number = 1  # Start from 1 since we skipped header
+        row_number = 1 
         
         for row in csv_reader:
             row_number += 1
@@ -315,7 +290,6 @@ async def import_questions_from_csv(
             
             question_text, option_a, option_b, option_c, option_d, correct_option = row
             
-            # Create and validate question
             try:
                 question = QuestionCreate(
                     question_text=question_text.strip(),
@@ -333,7 +307,6 @@ async def import_questions_from_csv(
                     detail=f"Row {row_number}: {str(e)}"
                 )
             
-            # Check maximum questions limit
             if len(questions) > 50:
                 raise HTTPException(
                     status_code=400, 
@@ -343,11 +316,10 @@ async def import_questions_from_csv(
         if not questions:
             raise HTTPException(status_code=400, detail="No valid questions found in the CSV file")
         
-        # Convert to dict format for frontend
         questions_data = []
         for i, q in enumerate(questions):
             questions_data.append({
-                "id": f"import_{i}",  # Temporary ID for frontend
+                "id": f"import_{i}",  
                 "question_text": q.question_text,
                 "option_a": q.option_a,
                 "option_b": q.option_b,

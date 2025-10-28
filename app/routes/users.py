@@ -16,14 +16,12 @@ class UpdateProfile(BaseModel):
 async def get_user_profile(current_user: dict = Depends(get_current_user)):
     """Get current user's profile with quiz history and recommendations"""
     try:
-        # Get user details
         users = db.select("users", "*", {"id": current_user["id"]})
         if not users:
             raise HTTPException(status_code=404, detail="User not found")
         
         user = users[0]
         
-        # Get user's quiz attempts
         responses = db.select("responses", "*", {"user_id": current_user["id"]})
         
         quiz_history = []
@@ -44,10 +42,8 @@ async def get_user_profile(current_user: dict = Depends(get_current_user)):
             if quiz.get("topic"):
                 attempted_topics.add(quiz["topic"])
         
-        # Sort by submission date (most recent first)
         quiz_history.sort(key=lambda x: x["submitted_at"], reverse=True)
         
-        # Get quiz recommendations (trivia quizzes in topics user hasn't attempted)
         all_topics = set()
         all_trivia = db.select("quizzes", "topic", {"is_trivia": True, "is_active": True})
         for quiz in all_trivia:
@@ -56,20 +52,16 @@ async def get_user_profile(current_user: dict = Depends(get_current_user)):
         
         recommended_topics = list(all_topics - attempted_topics)
         
-        # Get actual quiz recommendations
         recommendations = []
-        for topic in recommended_topics[:3]:  # Limit to 3 recommendations
+        for topic in recommended_topics[:3]:  
             topic_quizzes = db.select("quizzes", "id,title,topic,difficulty,popularity", 
                                     {"is_trivia": True, "topic": topic, "is_active": True})
             if topic_quizzes:
-                # Sort by popularity and pick the best one
                 topic_quizzes.sort(key=lambda x: x.get("popularity", 0), reverse=True)
                 recommendations.append(topic_quizzes[0])
         
-        # Calculate user's trivia ranking
         trivia_ranking = None
         try:
-            # Get all trivia ratings
             all_ratings = db.select("ratings", "*", {})
             user_total_rating = 0
             user_quiz_count = 0
@@ -93,7 +85,6 @@ async def get_user_profile(current_user: dict = Depends(get_current_user)):
             if user_quiz_count > 0:
                 user_avg_rating = user_total_rating / user_quiz_count
                 
-                # Calculate ranking
                 better_users = 0
                 for uid, data in all_user_ratings.items():
                     if uid != current_user["id"]:
@@ -116,7 +107,7 @@ async def get_user_profile(current_user: dict = Depends(get_current_user)):
                 "email": user["email"],
                 "created_at": user.get("created_at")
             },
-            "quiz_history": quiz_history[:10],  # Last 10 attempts
+            "quiz_history": quiz_history[:10],  
             "total_quizzes_attempted": len(quiz_history),
             "attempted_topics": list(attempted_topics),
             "recommendations": recommendations,
@@ -140,11 +131,9 @@ async def update_user_profile(profile_data: UpdateProfile, current_user: dict = 
         if not update_data:
             raise HTTPException(status_code=400, detail="No fields to update")
         
-        # Update in database
         updated_user = db.update("users", update_data, {"id": current_user["id"]})
         
         if not updated_user:
-            # If update returns None, get the user data
             users = db.select("users", "*", {"id": current_user["id"]})
             if users:
                 updated_user = users[0]
@@ -167,7 +156,6 @@ async def update_user_profile(profile_data: UpdateProfile, current_user: dict = 
 async def get_user_leaderboard_position(current_user: dict = Depends(get_current_user)):
     """Get user's position in global trivia leaderboard"""
     try:
-        # Get all trivia ratings
         all_ratings = db.select("ratings", "*", {})
         
         user_ratings = {}
@@ -182,7 +170,6 @@ async def get_user_leaderboard_position(current_user: dict = Depends(get_current
                 user_ratings[user_id]["total"] += rating["rating"]
                 user_ratings[user_id]["count"] += 1
         
-        # Calculate average ratings
         leaderboard = []
         for user_id, data in user_ratings.items():
             if data["count"] > 0:
@@ -193,10 +180,8 @@ async def get_user_leaderboard_position(current_user: dict = Depends(get_current
                     "quiz_count": data["count"]
                 })
         
-        # Sort by average rating
         leaderboard.sort(key=lambda x: (x["average_rating"], x["quiz_count"]), reverse=True)
         
-        # Find user's position
         user_position = None
         for i, entry in enumerate(leaderboard):
             if entry["user_id"] == current_user["id"]:

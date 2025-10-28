@@ -20,11 +20,9 @@ logger = logging.getLogger(__name__)
 
 class ConnectionManager:
     def __init__(self):
-        # Track active connections
-        self.host_connections: Dict[str, WebSocket] = {}  # room_code -> host_ws
-        self.player_connections: Dict[str, Dict[str, WebSocket]] = {}  # room_code -> player_id -> ws
+        self.host_connections: Dict[str, WebSocket] = {}  
+        self.player_connections: Dict[str, Dict[str, WebSocket]] = {}  
         
-        # Connection limits and rate limiting
         self.MAX_PLAYERS_PER_ROOM = 50  # Max players per room
         self.MAX_ROOMS = 100  # Max concurrent rooms
         self.MAX_CONNECTIONS_PER_IP = 100  # Max connections per IP
@@ -35,7 +33,6 @@ class ConnectionManager:
         self.connection_attempts: Dict[str, deque] = defaultdict(deque)  # IP -> timestamps
         self.ip_connections: Dict[str, int] = defaultdict(int)  # IP -> connection count
         
-        # Performance monitoring
         self.metrics = {
             'total_connections': 0,
             'active_rooms': 0,
@@ -47,14 +44,12 @@ class ConnectionManager:
             'memory_usage_mb': 0
         }
         
-        # Background tasks
         self.cleanup_task = None
         self.heartbeat_task = None
         self.start_background_tasks()
         
-        # Heartbeat settings
-        self.HEARTBEAT_INTERVAL = 30  # Send ping every 30 seconds
-        self.HEARTBEAT_TIMEOUT = 60   # Consider connection dead after 60 seconds
+        self.HEARTBEAT_INTERVAL = 30 
+        self.HEARTBEAT_TIMEOUT = 60   
     
     def start_background_tasks(self):
         """Start background tasks"""
@@ -70,7 +65,7 @@ class ConnectionManager:
         """Periodic cleanup of inactive sessions and stale connections"""
         while True:
             try:
-                await asyncio.sleep(300)  # Run every 5 minutes
+                await asyncio.sleep(300)  
                 await self.cleanup_stale_sessions()
                 await self.cleanup_rate_limits()
                 self.log_metrics()
@@ -100,26 +95,21 @@ class ConnectionManager:
             "timestamp": time.time()
         })
         
-        # Check host connections
         for room_code, websocket in list(self.host_connections.items()):
             try:
-                # Send heartbeat message instead of ping
                 await websocket.send_text(heartbeat_message)
             except Exception as e:
                 logger.warning(f"Host heartbeat failed for room {room_code}: {e}")
                 dead_hosts.append(room_code)
         
-        # Check player connections
         for room_code, players in list(self.player_connections.items()):
             for player_id, websocket in list(players.items()):
                 try:
-                    # Send heartbeat message instead of ping
                     await websocket.send_text(heartbeat_message)
                 except Exception as e:
                     logger.warning(f"Player heartbeat failed for {player_id} in room {room_code}: {e}")
                     dead_players.append((room_code, player_id))
         
-        # Clean up dead connections
         for room_code in dead_hosts:
             await self.disconnect_host(room_code)
         
@@ -132,9 +122,8 @@ class ConnectionManager:
         stale_rooms = []
         
         for room_code, session in game_storage.sessions.items():
-            # Remove sessions older than 2 hours or with no active players
             if (not session.is_active or 
-                (current_time - session.created_at) > 7200 or  # 2 hours
+                (current_time - session.created_at) > 7200 or  
                 session.get_player_count() == 0):
                 
                 stale_rooms.append(room_code)
@@ -149,11 +138,9 @@ class ConnectionManager:
         cutoff_time = current_time - self.RATE_LIMIT_WINDOW
         
         for ip, timestamps in list(self.connection_attempts.items()):
-            # Remove old timestamps
             while timestamps and timestamps[0] < cutoff_time:
                 timestamps.popleft()
             
-            # Remove empty entries
             if not timestamps:
                 del self.connection_attempts[ip]
     
@@ -163,14 +150,11 @@ class ConnectionManager:
         import os
         
         try:
-            # Update metrics
             self.metrics['active_rooms'] = len(game_storage.sessions)
             
-            # Calculate memory usage
             process = psutil.Process(os.getpid())
             self.metrics['memory_usage_mb'] = round(process.memory_info().rss / 1024 / 1024, 2)
             
-            # Calculate total players
             total_players = sum(session.get_player_count() for session in game_storage.sessions.values())
             
             logger.info(f"Performance Metrics: Rooms={self.metrics['active_rooms']}, "
@@ -214,30 +198,24 @@ class ConnectionManager:
         current_time = time.time()
         cutoff_time = current_time - self.RATE_LIMIT_WINDOW
         
-        # Clean old entries for this IP
         timestamps = self.connection_attempts[client_ip]
         while timestamps and timestamps[0] < cutoff_time:
             timestamps.popleft()
         
-        # Check rate limit
         if len(timestamps) >= self.MAX_REQUESTS_PER_WINDOW:
             return False
         
-        # Add current timestamp
         timestamps.append(current_time)
         return True
     
     def check_connection_limits(self, room_code: str = None, client_ip: str = None) -> Tuple[bool, str]:
         """Check various connection limits"""
-        # Check max rooms limit
         if len(game_storage.sessions) >= self.MAX_ROOMS:
             return False, "Maximum number of rooms reached"
         
-        # Check per-IP connection limit
         if client_ip and self.ip_connections[client_ip] >= self.MAX_CONNECTIONS_PER_IP:
             return False, "Too many connections from your IP address"
         
-        # Check players per room limit
         if room_code:
             session = game_storage.get_session(room_code)
             if session and session.get_player_count() >= self.MAX_PLAYERS_PER_ROOM:
@@ -251,11 +229,9 @@ class ConnectionManager:
         max_attempts = 100
         
         while attempts < max_attempts:
-            # Generate random alphanumeric string
             chars = string.ascii_uppercase + string.digits
             room_code = ''.join(secrets.choice(chars) for _ in range(length))
             
-            # Ensure uniqueness
             if room_code not in game_storage.sessions:
                 return room_code
             
@@ -266,7 +242,6 @@ class ConnectionManager:
     async def connect_host(self, websocket: WebSocket, host_id: str, client_ip: str = None) -> Optional[str]:
         """Connect host and create a new room"""
         try:
-            # Check rate limits and connection limits
             if client_ip:
                 if not self.check_rate_limit(client_ip):
                     await websocket.close(code=1008, reason="Rate limit exceeded")
@@ -281,22 +256,17 @@ class ConnectionManager:
             
             await websocket.accept()
             
-            # Generate unique room code
             room_code = self.generate_room_code()
             
-            # Create game session
             session = game_storage.create_session(room_code, host_id, websocket)
             
-            # Track host connection
             self.host_connections[room_code] = websocket
             self.player_connections[room_code] = {}
             
-            # Update metrics and IP tracking
             self.metrics['total_connections'] += 1
             if client_ip:
                 self.ip_connections[client_ip] += 1
             
-            # Send room created message to host
             await self.send_to_host(room_code, RoomCreatedMessage(room_code=room_code))
             
             logger.info(f"Host {host_id} created room {room_code}")
@@ -314,7 +284,6 @@ class ConnectionManager:
     async def connect_player(self, websocket: WebSocket, room_code: str, username: str, client_ip: str = None) -> Optional[str]:
         """Connect player to existing room"""
         try:
-            # Check rate limits and connection limits
             if client_ip:
                 if not self.check_rate_limit(client_ip):
                     await websocket.close(code=1008, reason="Rate limit exceeded")
@@ -329,13 +298,11 @@ class ConnectionManager:
             
             await websocket.accept()
             
-            # Check if room exists
             session = game_storage.get_session(room_code)
             if not session or not session.is_active:
                 await self.send_error(websocket, "Room doesn't exist or is no longer active")
                 return None
             
-            # Generate unique player ID with collision detection
             max_attempts = 10
             player_id = None
             for attempt in range(max_attempts):
@@ -348,28 +315,23 @@ class ConnectionManager:
                 await self.send_error(websocket, "Failed to generate unique player ID")
                 return None
             
-            # Create player
             player = Player(id=player_id, username=username, ws=websocket)
             session.players[player_id] = player
             
-            # Track player connection
             if room_code not in self.player_connections:
                 self.player_connections[room_code] = {}
             self.player_connections[room_code][player_id] = websocket
             
-            # Update metrics and IP tracking
             self.metrics['total_connections'] += 1
             if client_ip:
                 self.ip_connections[client_ip] += 1
             
-            # Broadcast to other players (not host) that new player joined
             await self.broadcast_to_players(
                 room_code, 
                 PlayerJoinedMessage(username=username, player_count=session.get_player_count()),
                 exclude_player=player_id
             )
             
-            # Send player count update to host
             await self.send_to_host(room_code, PlayerCountMessage(count=session.get_player_count()))
             
             logger.info(f"Player {username} joined room {room_code} ({session.get_player_count()}/{self.MAX_PLAYERS_PER_ROOM})")
@@ -389,22 +351,17 @@ class ConnectionManager:
         try:
             session = game_storage.get_session(room_code)
             if session:
-                # Mark session as inactive
                 session.is_active = False
                 
-                # Notify all players that room is closed
                 await self.broadcast_to_players(
                     room_code, 
                     RoomClosedMessage(reason="Host disconnected")
                 )
                 
-                # Close all player connections
                 await self.close_all_player_connections(room_code)
                 
-                # Clean up room
                 await self.cleanup_room(room_code)
                 
-                # Update metrics
                 self.metrics['disconnections'] += 1
                 if client_ip:
                     self.ip_connections[client_ip] = max(0, self.ip_connections[client_ip] - 1)
@@ -420,22 +377,17 @@ class ConnectionManager:
         try:
             session = game_storage.get_session(room_code)
             if session and player_id in session.players:
-                # Mark player as disconnected
                 session.players[player_id].connected = False
                 
-                # Remove from connection tracking
                 if room_code in self.player_connections and player_id in self.player_connections[room_code]:
                     del self.player_connections[room_code][player_id]
                 
-                # Update host with new player count
                 await self.send_to_host(room_code, PlayerCountMessage(count=session.get_player_count()))
                 
-                # Update metrics
                 self.metrics['disconnections'] += 1
                 if client_ip:
                     self.ip_connections[client_ip] = max(0, self.ip_connections[client_ip] - 1)
                 
-                # Clean up disconnected player after delay (they might reconnect)
                 asyncio.create_task(self.delayed_player_cleanup(room_code, player_id))
                 
                 logger.info(f"Player {player_id} disconnected from room {room_code}")
@@ -453,10 +405,8 @@ class ConnectionManager:
             if session and player_id in session.players:
                 player = session.players[player_id]
                 if not player.connected:
-                    # Remove player if still disconnected
                     del session.players[player_id]
                     
-                    # Update host with new player count
                     await self.send_to_host(room_code, PlayerCountMessage(count=session.get_player_count()))
                     
                     logger.info(f"Cleaned up disconnected player {player_id} from room {room_code}")
@@ -466,16 +416,13 @@ class ConnectionManager:
     async def cleanup_room(self, room_code: str):
         """Clean up all room resources"""
         try:
-            # Close all player connections
             await self.close_all_player_connections(room_code)
             
-            # Remove from connection tracking
             if room_code in self.host_connections:
                 del self.host_connections[room_code]
             if room_code in self.player_connections:
                 del self.player_connections[room_code]
             
-            # Remove session
             game_storage.remove_session(room_code)
             
         except Exception as e:
@@ -528,7 +475,6 @@ class ConnectionManager:
             if not session:
                 return
             
-            # Create question object
             question_data = NewQuestionMessage(**message)
             question = Question(
                 text=question_data.question,
@@ -538,13 +484,10 @@ class ConnectionManager:
                 start_time=question_data.timestamp
             )
             
-            # Clear previous question and set new one
             session.current_question = question
             
-            # Reset player answers efficiently
             await self._reset_player_states(session)
             
-            # Broadcast question to all players (without correct answer)
             player_message = QuestionMessage(
                 question=question.text,
                 options=question.options,
@@ -552,10 +495,8 @@ class ConnectionManager:
                 question_start_time=question.start_time
             )
             
-            # Broadcast with retry for better reliability
             successful_sends = await self.broadcast_to_players(room_code, player_message, retries=2)
             
-            # Start answer collection timer
             asyncio.create_task(self.question_timer(room_code, question.time_limit))
             
             logger.info(f"New question sent to room {room_code}, reached {successful_sends} players")
@@ -582,38 +523,31 @@ class ConnectionManager:
             if not session or not session.current_question:
                 return
             
-            # Check if player already answered (double-click protection)
             if player_id in session.current_question.answers:
                 return
             
             answer_data = AnswerMessage(**message)
             
-            # Atomic answer recording
             session.current_question.answers[player_id] = {
                 "option": answer_data.option,
                 "timestamp": answer_data.timestamp
             }
             
-            # Update player's current answer
             if player_id in session.players:
                 player = session.players[player_id]
                 player.current_answer = answer_data.option
                 player.answer_time = answer_data.timestamp
             
-            # Get counts efficiently
             answer_count = len(session.current_question.answers)
             total_players = session.get_player_count()
             
-            # Send answer count update to host (batch updates every few answers)
             if answer_count == 1 or answer_count % 5 == 0 or answer_count >= total_players:
                 await self.send_to_host(
                     room_code, 
                     AnswerCountMessage(answered=answer_count, total=total_players)
                 )
             
-            # If all players answered, end question early
             if answer_count >= total_players and total_players > 0:
-                # Cancel the timer task if it exists
                 await self.end_question(room_code)
             
         except Exception as e:
@@ -634,13 +568,11 @@ class ConnectionManager:
             
             question = session.current_question
             
-            # Calculate results
             results = session.calculate_scores()
             total_answers = len(question.answers)
             correct_answers = sum(1 for ans in question.answers.values() 
                                 if ans["option"] == question.correct_answer)
             
-            # Send results to host
             await self.send_to_host(
                 room_code,
                 ResultsMessage(
@@ -650,13 +582,11 @@ class ConnectionManager:
                 )
             )
             
-            # Send correct answer to all players
             await self.broadcast_to_players(
                 room_code,
                 QuestionEndedMessage(correct_answer=question.correct_answer)
             )
             
-            # Clear current question
             session.current_question = None
             
             logger.info(f"Question ended in room {room_code}, {correct_answers}/{total_answers} correct")
@@ -673,13 +603,11 @@ class ConnectionManager:
             
             session.is_active = False
             
-            # Notify all players
             await self.broadcast_to_players(
                 room_code,
                 RoomClosedMessage(reason="Host closed the room")
             )
             
-            # Close all connections
             await self.close_all_player_connections(room_code)
             
             # Clean up
@@ -713,7 +641,7 @@ class ConnectionManager:
                     await self.disconnect_host(room_code)
                     self.metrics['errors'] += 1
                     return False
-                await asyncio.sleep(0.1 * (attempt + 1))  # Exponential backoff
+                await asyncio.sleep(0.1 * (attempt + 1)) 
         
         return False
     
@@ -726,7 +654,6 @@ class ConnectionManager:
         successful_sends = 0
         failed_players = []
         
-        # Send to all players concurrently
         tasks = []
         for player_id, websocket in self.player_connections[room_code].items():
             if exclude_player and player_id == exclude_player:
@@ -737,7 +664,6 @@ class ConnectionManager:
             )
             tasks.append((player_id, task))
         
-        # Wait for all sends to complete
         for player_id, task in tasks:
             try:
                 success = await task
@@ -749,7 +675,6 @@ class ConnectionManager:
                 logger.error(f"Task failed for player {player_id}: {e}")
                 failed_players.append(player_id)
         
-        # Clean up failed connections
         for player_id in failed_players:
             await self.disconnect_player(room_code, player_id)
         
@@ -772,14 +697,12 @@ class ConnectionManager:
     async def send_error(self, websocket: WebSocket, error_message: str):
         """Send error message to websocket"""
         try:
-            # Check if connection is still open
-            if websocket.client_state.value == 3:  # 3 = CLOSED
+            if websocket.client_state.value == 3: 
                 return
                 
             error_msg = ErrorMessage(message=error_message)
             await websocket.send_text(error_msg.model_dump_json())
         except Exception as e:
-            # Ignore errors for closed connections
             if "close message has been sent" not in str(e):
                 logger.error(f"Error sending error message: {e}")
     
@@ -788,13 +711,10 @@ class ConnectionManager:
         if room_code in self.player_connections:
             for player_id, websocket in list(self.player_connections[room_code].items()):
                 try:
-                    # Check if connection is still open before closing
-                    if not websocket.client_state.value == 3:  # 3 = CLOSED
+                    if not websocket.client_state.value == 3:  
                         await websocket.close(code=1000, reason="Room closed")
                 except Exception as e:
-                    # Ignore close errors for already closed connections
                     if "close message has been sent" not in str(e):
                         logger.error(f"Error closing player connection {player_id}: {e}")
 
-# Global connection manager instance
 connection_manager = ConnectionManager()

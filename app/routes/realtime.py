@@ -17,7 +17,6 @@ async def get_user_from_websocket_token(token: Optional[str] = None) -> Optional
     if not token:
         return None
     try:
-        # Remove 'Bearer ' prefix if present
         if token.startswith('Bearer '):
             token = token[7:]
         
@@ -31,7 +30,6 @@ async def get_user_from_websocket_token(token: Optional[str] = None) -> Optional
 async def websocket_host_endpoint(websocket: WebSocket, room_code: str, token: Optional[str] = None):
     """WebSocket endpoint for quiz hosts (authenticated)"""
     
-    # Authenticate user
     user = await get_user_from_websocket_token(token)
     if not user:
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Authentication required")
@@ -42,20 +40,17 @@ async def websocket_host_endpoint(websocket: WebSocket, room_code: str, token: O
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Invalid user")
         return
     
-    # Check if room already exists with different host
     existing_session = game_storage.get_session(room_code)
     if existing_session and existing_session.host_id != host_id:
         await websocket.close(code=status.WS_1003_UNSUPPORTED_DATA, reason="Room code already in use")
         return
     
-    # Connect host
     actual_room_code = await connection_manager.connect_host(websocket, host_id)
     if not actual_room_code:
         return
     
     try:
         while True:
-            # Receive message from host
             data = await websocket.receive_text()
             try:
                 message = json.loads(data)
@@ -78,7 +73,6 @@ async def websocket_host_endpoint(websocket: WebSocket, room_code: str, token: O
 async def websocket_player_endpoint(websocket: WebSocket, room_code: str, username: str):
     """WebSocket endpoint for players (no authentication required)"""
     
-    # Validate username
     if not username or len(username.strip()) < 1:
         await websocket.close(code=status.WS_1003_UNSUPPORTED_DATA, reason="Username required")
         return
@@ -89,14 +83,12 @@ async def websocket_player_endpoint(websocket: WebSocket, room_code: str, userna
     
     username = username.strip()
     
-    # Connect player
     player_id = await connection_manager.connect_player(websocket, room_code, username)
     if not player_id:
         return
     
     try:
         while True:
-            # Receive message from player
             data = await websocket.receive_text()
             try:
                 message = json.loads(data)
@@ -115,7 +107,6 @@ async def websocket_player_endpoint(websocket: WebSocket, room_code: str, userna
         logger.error(f"Unexpected error in player websocket: {e}")
         await connection_manager.disconnect_player(room_code, player_id)
 
-# HTTP endpoints for room management
 @router.get("/rooms/{room_code}/info")
 async def get_room_info(room_code: str):
     """Get basic room information (for validation)"""

@@ -10,13 +10,12 @@ router = APIRouter()
 IST = pytz.timezone('Asia/Kolkata')
 
 class SubmitAnswersRequest(BaseModel):
-    answers: Dict[str, str]  # {question_id: selected_option}
+    answers: Dict[str, str] 
 
 @router.post("/{quiz_id}/start")
 async def start_quiz(quiz_id: str, current_user: dict = Depends(get_current_user)):
     """Start a quiz session"""
     try:
-        # Check if quiz exists and is active
         quizzes = db.select("quizzes", "*", {"id": quiz_id, "is_active": True})
         if not quizzes:
             raise HTTPException(status_code=404, detail="Quiz not found or not active")
@@ -24,7 +23,6 @@ async def start_quiz(quiz_id: str, current_user: dict = Depends(get_current_user
         quiz = quizzes[0]
         current_time = datetime.now(IST)
         
-        # Check quiz timing for private quizzes
         if not quiz["is_trivia"]:
             if quiz["start_time"]:
                 start_time_naive = datetime.fromisoformat(quiz["start_time"])
@@ -44,17 +42,14 @@ async def start_quiz(quiz_id: str, current_user: dict = Depends(get_current_user
                 if current_time > end_time:
                     raise HTTPException(status_code=400, detail="Quiz has ended")
         
-        # Check if user already has a session for this quiz
         existing_sessions = db.select("quiz_sessions", "*", {"quiz_id": quiz_id, "user_id": current_user["id"]})
         if existing_sessions:
             raise HTTPException(status_code=400, detail="You have already attempted this quiz")
         
-        # Check if user already has a response (backup check)
         existing_responses = db.select("responses", "*", {"quiz_id": quiz_id, "user_id": current_user["id"]})
         if existing_responses:
             raise HTTPException(status_code=400, detail="You have already completed this quiz")
         
-        # Create new session
         session_data = {
             "quiz_id": quiz_id,
             "user_id": current_user["id"],
@@ -64,10 +59,8 @@ async def start_quiz(quiz_id: str, current_user: dict = Depends(get_current_user
         
         session = db.insert("quiz_sessions", session_data)
         
-        # Get quiz questions (without correct answers)
         questions = db.select("questions", "id,question_text,option_a,option_b,option_c,option_d", {"quiz_id": quiz_id})
         
-        # Update quiz popularity for trivia
         if quiz["is_trivia"]:
             new_popularity = quiz.get("popularity", 0) + 1
             db.update("quizzes", {"popularity": new_popularity}, {"id": quiz_id})
@@ -98,7 +91,6 @@ async def start_quiz(quiz_id: str, current_user: dict = Depends(get_current_user
 async def submit_quiz(quiz_id: str, answers_data: SubmitAnswersRequest, current_user: dict = Depends(get_current_user)):
     """Submit quiz answers"""
     try:
-        # Get the quiz session
         sessions = db.select("quiz_sessions", "*", {"quiz_id": quiz_id, "user_id": current_user["id"]})
         if not sessions:
             raise HTTPException(status_code=404, detail="Quiz session not found")
@@ -107,22 +99,18 @@ async def submit_quiz(quiz_id: str, answers_data: SubmitAnswersRequest, current_
         if session.get("ended"):
             raise HTTPException(status_code=400, detail="Quiz already submitted")
         
-        # Get quiz and questions with correct answers
         quiz = db.select("quizzes", "*", {"id": quiz_id})[0]
         questions = db.select("questions", "*", {"quiz_id": quiz_id})
         
-        # Validate submission time (with grace period of 30 seconds)
         current_time = datetime.now(IST)
         started_at_naive = datetime.fromisoformat(session["started_at"])
-        # Convert to IST if it's naive, otherwise use as is
         if started_at_naive.tzinfo is None:
             started_at = IST.localize(started_at_naive)
         else:
             started_at = started_at_naive.astimezone(IST)
-        max_allowed_time = started_at + timedelta(minutes=quiz["duration"], seconds=30)  # 30 second grace period
+        max_allowed_time = started_at + timedelta(minutes=quiz["duration"], seconds=30)  
         
         if current_time > max_allowed_time:
-            # Time exceeded, submit with 0 score
             response_data = {
                 "quiz_id": quiz_id,
                 "user_id": current_user["id"],
@@ -138,22 +126,18 @@ async def submit_quiz(quiz_id: str, answers_data: SubmitAnswersRequest, current_
             
             raise HTTPException(status_code=400, detail="Time limit exceeded. Quiz submitted with 0 score.")
         
-        # Calculate score
         correct_answers = {str(q["id"]): q["correct_option"] for q in questions}
         score = 0
         
         for question_id, correct_option in correct_answers.items():
             user_answer = answers_data.answers.get(question_id)
             if user_answer == correct_option:
-                # Use general positive marks for all correct answers
                 score += quiz["positive_mark"]
-            elif user_answer is not None:  # Wrong answer (not unattempted)
+            elif user_answer is not None:  
                 score -= quiz["negative_mark"]
         
-        # Ensure score is not negative
         score = max(0, score)
         
-        # Create response record
         response_data = {
             "quiz_id": quiz_id,
             "user_id": current_user["id"],
@@ -165,18 +149,14 @@ async def submit_quiz(quiz_id: str, answers_data: SubmitAnswersRequest, current_
         
         response = db.insert("responses", response_data)
         
-        # Update session as ended
         db.update("quiz_sessions", {"ended": True, "ended_at": current_time.isoformat()}, {"id": session["id"]})
         
-        # If it's a trivia quiz, create/update rating
         if quiz["is_trivia"]:
-            # Calculate rating based on score and time taken
             time_taken_minutes = (current_time - started_at).total_seconds() / 60
             max_score = len(questions) * quiz["positive_mark"]
             
-            # Rating calculation: base score + time bonus (faster = better)
             score_percentage = (score / max_score) * 100 if max_score > 0 else 0
-            time_bonus = max(0, (quiz["duration"] - time_taken_minutes) / quiz["duration"] * 20)  # Up to 20 bonus points
+            time_bonus = max(0, (quiz["duration"] - time_taken_minutes) / quiz["duration"] * 20)  
             rating = int(score_percentage + time_bonus)
             
             rating_data = {
@@ -186,7 +166,6 @@ async def submit_quiz(quiz_id: str, answers_data: SubmitAnswersRequest, current_
                 "updated_at": current_time.isoformat()
             }
             
-            # Try to update existing rating, or create new one
             try:
                 existing_rating = db.select("ratings", "*", {"user_id": current_user["id"], "quiz_id": quiz_id})
                 if existing_rating:
@@ -195,7 +174,6 @@ async def submit_quiz(quiz_id: str, answers_data: SubmitAnswersRequest, current_
                 else:
                     db.insert("ratings", rating_data)
             except:
-                # Rating table might not exist, create it
                 db.insert("ratings", rating_data)
         
         return {

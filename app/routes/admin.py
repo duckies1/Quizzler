@@ -24,7 +24,6 @@ class QuizStats(BaseModel):
 async def add_trivia_genre(genre_data: AddGenre, admin_user: dict = Depends(require_admin)):
     """Add new trivia genre/topic"""
     try:
-        # Check if genre already exists
         existing_genres = db.select("trivia_genres", "*", {"name": genre_data.name})
         if existing_genres:
             raise HTTPException(status_code=400, detail="Genre already exists")
@@ -40,7 +39,6 @@ async def add_trivia_genre(genre_data: AddGenre, admin_user: dict = Depends(requ
         try:
             created_genre = db.insert("trivia_genres", genre)
         except Exception:
-            # Table might not exist, create a simple response
             return {
                 "message": f"Genre '{genre_data.name}' noted. Use this topic when creating trivia quizzes.",
                 "genre": genre_data.name
@@ -64,7 +62,6 @@ async def get_trivia_genres(admin_user: dict = Depends(require_admin)):
             genres = db.select("trivia_genres", "*", {"is_active": True})
             return {"genres": genres}
         except:
-            # If table doesn't exist, get from existing quizzes
             quizzes = db.select("quizzes", "topic", {"is_trivia": True, "is_active": True})
             topics = list(set(quiz["topic"] for quiz in quizzes if quiz.get("topic")))
             return {
@@ -79,13 +76,11 @@ async def get_trivia_genres(admin_user: dict = Depends(require_admin)):
 async def get_quiz_statistics(admin_user: dict = Depends(require_admin)):
     """Get statistics for all quizzes"""
     try:
-        # Get all quizzes
         quizzes = db.select("quizzes", "*", {})
         
         quiz_stats = []
         
         for quiz in quizzes:
-            # Get responses for this quiz
             responses = db.select("responses", "score", {"quiz_id": quiz["id"]})
             
             total_attempts = len(responses)
@@ -107,8 +102,7 @@ async def get_quiz_statistics(admin_user: dict = Depends(require_admin)):
                 "popularity": quiz.get("popularity", 0),
                 "created_at": quiz.get("created_at")
             })
-        
-        # Sort by total attempts (most popular first)
+       
         quiz_stats.sort(key=lambda x: x["total_attempts"], reverse=True)
         
         return {
@@ -125,10 +119,8 @@ async def get_quiz_statistics(admin_user: dict = Depends(require_admin)):
 async def get_user_statistics(admin_user: dict = Depends(require_admin)):
     """Get user statistics"""
     try:
-        # Get all users
         users = db.select("users", "*", {})
         
-        # Get all responses
         responses = db.select("responses", "*", {})
         
         user_stats = []
@@ -140,7 +132,6 @@ async def get_user_statistics(admin_user: dict = Depends(require_admin)):
             total_score = sum(r["score"] for r in user_responses)
             average_score = total_score / total_quizzes if total_quizzes > 0 else 0
             
-            # Count trivia vs private
             trivia_attempts = 0
             private_attempts = 0
             
@@ -163,7 +154,6 @@ async def get_user_statistics(admin_user: dict = Depends(require_admin)):
                 "created_at": user.get("created_at")
             })
         
-        # Sort by total quizzes (most active first)
         user_stats.sort(key=lambda x: x["total_quizzes"], reverse=True)
         
         return {
@@ -179,14 +169,12 @@ async def get_user_statistics(admin_user: dict = Depends(require_admin)):
 async def delete_quiz(quiz_id: str, admin_user: dict = Depends(require_admin)):
     """Delete a quiz (admin only)"""
     try:
-        # Check if quiz exists
         quizzes = db.select("quizzes", "*", {"id": quiz_id})
         if not quizzes:
             raise HTTPException(status_code=404, detail="Quiz not found")
         
         quiz = quizzes[0]
         
-        # Soft delete - just mark as inactive
         db.update("quizzes", {"is_active": False}, {"id": quiz_id})
         
         return {

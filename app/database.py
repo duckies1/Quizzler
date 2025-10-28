@@ -2,13 +2,10 @@ import sys
 import importlib.util
 from types import ModuleType
 
-# Create a monkey patch for the missing websockets.asyncio module
 if 'websockets.asyncio' not in sys.modules:
-    # Create a fake asyncio module with the ClientConnection class
     asyncio_module = ModuleType('websockets.asyncio')
     client_module = ModuleType('websockets.asyncio.client')
     
-    # Create a dummy ClientConnection class
     class ClientConnection:
         pass
     
@@ -41,24 +38,20 @@ def get_supabase_admin_client() -> Client:
 supabase: Client = get_supabase_client()
 supabase_admin: Client = get_supabase_admin_client()
 
-# Function to test Supabase connection
 def test_supabase_connection():
     """Test Supabase connection"""
     try:
-        # Test with a simple health check
         response = supabase.table('_realtime').select('*').limit(1).execute()
         return True
     except Exception as e:
         logging.error(f"Supabase connection test failed: {e}")
         try:
-            # Alternative test - try to get user
             supabase.auth.get_session()
             return True
         except Exception as e2:
             logging.error(f"Supabase auth test also failed: {e2}")
             return False
 
-# Database operations using Supabase REST API
 class Database:
     """Database operations using Supabase REST API"""
     

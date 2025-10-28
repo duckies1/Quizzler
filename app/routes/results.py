@@ -15,13 +15,10 @@ async def get_my_result(quiz_id: str, current_user: dict = Depends(get_current_u
         
         response = responses[0]
         
-        # Get quiz info
         quiz = db.select("quizzes", "title,description", {"id": quiz_id})[0]
         
-        # Get all questions for this quiz
         questions = db.select("questions", "id,question_text,option_a,option_b,option_c,option_d,correct_option", {"quiz_id": quiz_id})
         
-        # Create a mapping of question details
         question_details = {}
         for question in questions:
             question_details[str(question["id"])] = {
@@ -50,17 +47,14 @@ async def get_my_result(quiz_id: str, current_user: dict = Depends(get_current_u
 async def get_quiz_results(quiz_id: str, current_user: dict = Depends(get_current_user)):
     """Get all results for a quiz (only for quiz creator)"""
     try:
-        # Check if user is the creator of this quiz
         quizzes = db.select("quizzes", "*", {"id": quiz_id, "creator_id": current_user["id"]})
         if not quizzes:
             raise HTTPException(status_code=403, detail="Access denied. You are not the creator of this quiz.")
         
         quiz = quizzes[0]
         
-        # Get all responses for this quiz
         responses = db.select("responses", "*", {"quiz_id": quiz_id})
         
-        # Get user details for each response
         results = []
         for response in responses:
             user = db.select("users", "name,email", {"id": response["user_id"]})[0]
@@ -91,26 +85,23 @@ async def get_quiz_results(quiz_id: str, current_user: dict = Depends(get_curren
 async def get_global_leaderboard(limit: int = 50):
     """Get global leaderboard for trivia quizzes"""
     try:
-        # Get all trivia responses with user and quiz details
         responses = db.select("responses", "*", {})
         
         leaderboard_data = []
-        user_ratings = {}  # To accumulate ratings per user
+        user_ratings = {}  
         
         for response in responses:
             quiz = db.select("quizzes", "title,topic,is_trivia,difficulty", {"id": response["quiz_id"]})[0]
             if quiz["is_trivia"]:
                 user = db.select("users", "name,email", {"id": response["user_id"]})[0]
                 
-                # Try to get rating from ratings table
                 rating = 0
                 try:
                     ratings = db.select("ratings", "rating", {"user_id": response["user_id"], "quiz_id": response["quiz_id"]})
                     if ratings:
                         rating = ratings[0]["rating"]
                 except:
-                    # Calculate rating if not in ratings table
-                    rating = response["score"] * 10  # Simple fallback
+                    rating = response["score"] * 10  
                 
                 user_key = response["user_id"]
                 if user_key not in user_ratings:
@@ -131,12 +122,10 @@ async def get_global_leaderboard(limit: int = 50):
                     user_ratings[user_key]["best_score"] = response["score"]
                     user_ratings[user_key]["best_quiz"] = quiz["title"]
         
-        # Convert to list and calculate average ratings
         for user_data in user_ratings.values():
             user_data["average_rating"] = user_data["total_rating"] / user_data["quiz_count"] if user_data["quiz_count"] > 0 else 0
             leaderboard_data.append(user_data)
         
-        # Sort by average rating, then by quiz count
         leaderboard_data.sort(key=lambda x: (x["average_rating"], x["quiz_count"]), reverse=True)
         
         return {
@@ -151,18 +140,15 @@ async def get_global_leaderboard(limit: int = 50):
 async def get_quiz_leaderboard(quiz_id: str, current_user: dict = Depends(get_current_user)):
     """Get leaderboard for a specific quiz"""
     try:
-        # Check if quiz exists
         quizzes = db.select("quizzes", "*", {"id": quiz_id})
         if not quizzes:
             raise HTTPException(status_code=404, detail="Quiz not found")
         
         quiz = quizzes[0]
         
-        # For private quizzes, check if user has access
         if not quiz["is_trivia"] and quiz["creator_id"] != current_user["id"]:
             raise HTTPException(status_code=403, detail="Access denied")
         
-        # Get all responses for this quiz
         responses = db.select("responses", "*", {"quiz_id": quiz_id})
         
         leaderboard = []
@@ -175,7 +161,6 @@ async def get_quiz_leaderboard(quiz_id: str, current_user: dict = Depends(get_cu
                 "submitted_at": response["submitted_at"]
             })
         
-        # Sort by score (highest first), then by submission time (earliest first)
         leaderboard.sort(key=lambda x: (-x["score"], x["submitted_at"]))
         
         return {
@@ -197,7 +182,6 @@ async def get_quiz_leaderboard(quiz_id: str, current_user: dict = Depends(get_cu
 async def get_user_stats(current_user: dict = Depends(get_current_user)):
     """Get user's quiz statistics"""
     try:
-        # Get all user's responses
         responses = db.select("responses", "*", {"user_id": current_user["id"]})
         
         total_quizzes = len(responses)
@@ -218,17 +202,14 @@ async def get_user_stats(current_user: dict = Depends(get_current_user)):
             "best_score": 0
         }
         
-        # Track perfect scores
         has_perfect_score = False
         
         for response in responses:
             quiz = db.select("quizzes", "is_trivia,topic,title,positive_mark", {"id": response["quiz_id"]})[0]
             
-            # Calculate max possible score for this quiz
             questions = db.select("questions", "id", {"quiz_id": response["quiz_id"]})
             max_possible_score = len(questions) * quiz["positive_mark"]
             
-            # Check if this is a perfect score (100%)
             if response["score"] == max_possible_score and max_possible_score > 0:
                 has_perfect_score = True
             
@@ -243,7 +224,6 @@ async def get_user_stats(current_user: dict = Depends(get_current_user)):
                 private_stats["total_score"] += response["score"]
                 private_stats["best_score"] = max(private_stats["best_score"], response["score"])
         
-        # Calculate averages
         if trivia_stats["quizzes_attempted"] > 0:
             trivia_stats["average_score"] = trivia_stats["total_score"] / trivia_stats["quizzes_attempted"]
         
