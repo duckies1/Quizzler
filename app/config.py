@@ -10,7 +10,7 @@ class Settings(BaseSettings):
     debug: bool = os.getenv("DEBUG", "false").lower() == "true"
     
     # Database Configuration
-    user: str = os.getenv("user", "postgres")
+    user: str = os.getenv("user", "postgres") 
     password: SecretStr = os.getenv("password", "")
     host: str = os.getenv("host", "localhost")
     port: int = int(os.getenv("port", 5432))
@@ -20,7 +20,7 @@ class Settings(BaseSettings):
     supabase_url: str = os.getenv("SUPABASE_URL")
     supabase_anon_key: SecretStr = os.getenv("SUPABASE_ANON_KEY", "")
     supabase_service_role_key: SecretStr = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
-    use_supabase_rest: bool = os.getenv("USE_SUPABASE_REST", "false").lower() == "true"
+    use_supabase_rest: bool = os.getenv("USE_SUPABASE_REST", "false").lower() == "true" 
     
     # JWT Configuration
     jwt_secret: str = os.getenv("JWT_SECRET", "your-fallback-secret-key")
