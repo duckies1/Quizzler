@@ -16,6 +16,7 @@ import io
 import os
 import app.utils.time_utils 
 from google import genai
+from dotenv import load_dotenv
 
 def get_ist_time():
     """Get current time in IST"""
@@ -26,8 +27,7 @@ def get_ist_time():
 IST = timezone(timedelta(hours=5, minutes=30))
 
 router = APIRouter()
-api_key = os.getenv("GEMINI_API_KEY1")
-client = genai.Client(api_key="AIzaSyDHLKGwxF8tV06KfHdrS8yZ8SRrAWWxEdM")
+client = genai.Client(api_key="API_KEY")
 
 # GEMINI_API_KEY = os.getenv("GEMINI_API_KEY1")
 # GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent"
